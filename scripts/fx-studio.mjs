@@ -24,17 +24,24 @@ import { createServer } from 'http';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
 import { PNG } from 'pngjs';
 import { readFrames, encodeGif, rubOut, fillRatio, listItems, sourcesFor } from './lib/fxgif.mjs';
 
+// 경로는 전부 이 파일 위치 기준이다. 이동식 SSD라 드라이브 문자가 바뀌고,
+// 어느 폴더에서 실행하든 같게 동작해야 한다.
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FXD = join(__dirname, '..', 'skillFX');
 const args = process.argv.slice(2);
-const PORT = args.includes('--port') ? parseInt(args[args.indexOf('--port') + 1], 10) : 4321;
+const WANT_PORT = args.includes('--port') ? parseInt(args[args.indexOf('--port') + 1], 10) : 4321;
+const OPEN = args.includes('--open');
 const REPO = 'RosemontAcademy/SkoolClassAssets';
 
 if (!existsSync(FXD)) {
-  console.error('skillFX 폴더를 못 찾았습니다: ' + FXD);
+  console.error('');
+  console.error('  skillFX 폴더를 못 찾았습니다: ' + FXD);
+  console.error('  이 파일이 SkoolClassAssets/scripts/ 안에 있어야 합니다.');
+  console.error('');
   process.exit(1);
 }
 
@@ -104,7 +111,7 @@ function save(body) {
 const send = (res, code, type, body) => { res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' }); res.end(body); };
 const json = (res, code, obj) => send(res, code, 'application/json; charset=utf-8', JSON.stringify(obj));
 
-createServer((req, res) => {
+const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   try {
     if (url.pathname === '/') return send(res, 200, 'text/html; charset=utf-8', PAGE);
@@ -147,15 +154,39 @@ createServer((req, res) => {
   } catch (e) {
     json(res, 500, { error: e.message });
   }
-}).listen(PORT, () => {
-  console.log('');
-  console.log('  공격 연출 편집기가 열렸습니다');
-  console.log('  →  http://localhost:' + PORT);
-  console.log('');
-  console.log('  자산 폴더: ' + FXD);
-  console.log('  끝낼 때는 이 창에서 Ctrl+C');
-  console.log('');
 });
+
+// 포트가 이미 쓰이고 있으면 다음 번호로 옮겨 뜬다. "연결 안 됨"의 흔한 원인이 이것이다.
+// 배너는 listen 시도마다가 아니라 'listening' 에 한 번만 걸어야 한다 —
+// 시도마다 콜백을 넘기면 재시도할 때 옛 콜백이 남아 옛 포트 번호로 두 번 찍힌다.
+let tries = 12;
+server.on('error', err => {
+  if (err.code === 'EADDRINUSE' && tries-- > 0) {
+    const next = server.__port + 1;
+    console.log('  ' + server.__port + '번은 이미 쓰는 중 — ' + next + '번으로 옮깁니다');
+    open(next);
+  } else {
+    console.error('  서버를 못 열었습니다: ' + err.message);
+    process.exit(1);
+  }
+});
+server.on('listening', () => {
+  const url = 'http://localhost:' + server.address().port;
+  console.log('');
+  console.log('  ┌────────────────────────────────────┐');
+  console.log('  │   공격 연출 편집기가 열렸습니다     │');
+  console.log('  └────────────────────────────────────┘');
+  console.log('');
+  console.log('     ' + url);
+  console.log('');
+  console.log('  브라우저가 안 뜨면 위 주소를 직접 열어주세요.');
+  console.log('  자산 폴더: ' + FXD);
+  console.log('  끝낼 때는 이 창에서 Ctrl+C  (창을 닫으면 편집기도 꺼집니다)');
+  console.log('');
+  if (OPEN) spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore' }).unref();
+});
+function open(port) { server.__port = port; server.listen(port, '127.0.0.1'); }
+open(WANT_PORT);
 
 // ── 화면 ─────────────────────────────────────────────────────────────────────
 const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />

@@ -132,6 +132,10 @@ const server = createServer((req, res) => {
   try {
     if (url.pathname === '/') return send(res, 200, 'text/html; charset=utf-8', PAGE);
 
+    // 브라우저가 알아서 찾는다. 없다고 404 를 내면 콘솔에 빨간 줄이 남아
+    // 진짜 오류를 찾을 때 헷갈린다.
+    if (url.pathname === '/favicon.ico') { res.writeHead(204); return res.end(); }
+
     if (url.pathname === '/api/items') {
       // 이미 조리법을 저장한 종은 목록에서 표시해 준다 — 62개를 여러 날에 걸쳐
       // 작업하니 어디까지 했는지가 안 보이면 같은 걸 또 만지게 된다.
@@ -155,6 +159,22 @@ const server = createServer((req, res) => {
         url.searchParams.get('src'), +url.searchParams.get('i'));
       if (!png) return json(res, 404, { error: '없음' });
       return send(res, 200, 'image/png', png);
+    }
+
+    // 게임 화면 미리보기에 쓸 스프라이트·배경. 편집기 안에서 실제 전투처럼 보여주려면
+    // 체커 위 1:1 이 아니라 캐릭터 위에 진짜 슬롯 크기로 얹어야 한다.
+    if (url.pathname === '/sprite.gif') {
+      const dir = url.searchParams.get('dir') || '';
+      const back = url.searchParams.get('back') === '1';
+      const p = join(__dirname, '..', 'sprites', 'pokemon', 'other', 'showdown', back ? 'back' : '', dir + '.gif');
+      if (!existsSync(p)) return json(res, 404, { error: '스프라이트 없음' });
+      return send(res, 200, 'image/gif', readFileSync(p));
+    }
+
+    if (url.pathname === '/battle-bg') {
+      const p = join(__dirname, '..', 'Background', 'TEST BG.png');
+      if (!existsSync(p)) return json(res, 404, { error: '배경 없음' });
+      return send(res, 200, 'image/png', readFileSync(p));
     }
 
     if (url.pathname === '/api/palette') {
@@ -275,6 +295,22 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   body[data-bg=grey] .stage,body[data-bg=grey] .fr img,body[data-bg=grey] .slot img,body[data-bg=grey] .cw{background-image:none;background-color:#8A8F9A}
   body[data-bg=none] .stage,body[data-bg=none] .fr img,body[data-bg=none] .slot img,body[data-bg=none] .cw{background-image:none;background-color:transparent}
 
+  /* ── 게임 화면 미리보기 ──
+     게임은 FX 를 캐릭터 위에 얹고, 선생님 화면에서는 screen 합성으로 그린다.
+     screen 에서는 어두운 픽셀이 사실상 안 보이므로 체커 위에서 판단하면 헛일을 한다.
+     .field 의 position:relative 가 빠지면 안에 절대배치한 스프라이트가 페이지 기준으로
+     떠서 편집기 위로 튀어나온다. */
+  .game{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px;
+    display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+  .field{position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--line);
+    background:#20242e;flex:0 0 auto}
+  .field img{position:absolute;image-rendering:pixelated}
+  .field .bg{left:0;top:0;width:100%;height:100%;object-fit:cover;opacity:.85;image-rendering:auto}
+  .field .slotbox{position:absolute;border:1px dashed rgba(255,255,255,.3);border-radius:3px;pointer-events:none}
+  .gopts{display:flex;flex-direction:column;gap:7px;width:250px;flex:0 0 auto}
+  .gopts .cur{gap:6px}
+  .gnote{font-size:11.5px;color:var(--muted);line-height:1.5}
+
   /* ── 큰 편집기 (프레임을 누르면 아래에 펼쳐진다) ── */
   .ed{background:var(--surface);border:2px solid var(--accent);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px}
   .ed h2{margin:0;font-size:14px;font-weight:800;display:flex;align-items:center;gap:8px}
@@ -307,7 +343,11 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
 </main>
 <script>
 const $=s=>document.querySelector(s), el=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e};
+// SpellRaid 의 CALIB_DEFAULTS 를 그대로 옮긴 값. 820x700 기준.
+const CANVAS=[820,700];
+const SLOT={boss:{x:509,y:26,s:120},player:{x:355,y:208,s:97},atk:{x:353,y:99,s:200},atkd:{x:318,y:35,s:318}};
 let items=[],cur=null,meta={},seq=[],edits={},fit=3000,zoom=1,playT=null,openEd=null;
+let leadShort=true,undoStack=[],blend='screen',showBg=true,showSlots=false;
 const furl=(src,i)=>'/frame.png?dir='+encodeURIComponent(cur.dir)+'&kind='+cur.kind+'&src='+src+'&i='+i;
 const K=(src,i)=>src+i;
 const nEdits=(src,i)=>(edits[K(src,i)]||[]).length;
@@ -364,6 +404,7 @@ function render(){
       +' · 한 바퀴 <b>'+loop+'ms</b> → 창 '+(fit/1000)+'초 안에서 <b>'+(fit/loop).toFixed(2)+'바퀴</b>'
     :'낱장을 눌러 크게 보고, ＋로 담으세요.';
   W.appendChild(info);
+  W.appendChild(gameView());
   if(openEd) W.appendChild(editor());
   play();
 }
@@ -437,11 +478,53 @@ function markIndex(box){
   let n=0;for(const c of box.children){if(c===mark)return n;if(c.classList.contains('slot'))n++}
   return seq.length;
 }
+function gameView(){
+  const wrap=el('div','game');
+  const SC=0.62;
+  const f=el('div','field');
+  f.style.width=CANVAS[0]*SC+'px';f.style.height=CANVAS[1]*SC+'px';
+  if(showBg){const bg=el('img');bg.className='bg';bg.src='/battle-bg';f.appendChild(bg)}
+  const put=(img,slot)=>{img.style.left=slot.x*SC+'px';img.style.top=slot.y*SC+'px';
+    img.style.width=slot.s*SC+'px';img.style.height=slot.s*SC+'px';img.style.objectFit='contain';f.appendChild(img)};
+  const isAtk=cur.kind==='attack';
+  if(isAtk){const b=el('img');b.src='/sprite.gif?dir='+encodeURIComponent(cur.dir);put(b,SLOT.boss)}
+  else{const p=el('img');p.src='/sprite.gif?dir='+encodeURIComponent(cur.dir)+'&back=1';put(p,SLOT.player)}
+  const fx=el('img');fx.id='gamefx';fx.style.mixBlendMode=blend==='screen'?'screen':'normal';
+  fx.style.zIndex='5';put(fx,isAtk?SLOT.atk:SLOT.atkd);
+  if(showSlots){const sl=isAtk?SLOT.atk:SLOT.atkd;const box=el('div','slotbox');
+    box.style.left=sl.x*SC+'px';box.style.top=sl.y*SC+'px';box.style.width=sl.s*SC+'px';box.style.height=sl.s*SC+'px';f.appendChild(box)}
+  wrap.appendChild(f);
+
+  const o=el('div','gopts');
+  const t=el('div');t.className='lbl';t.textContent='진짜 게임 화면';o.appendChild(t);
+  const bl=el('div','cur');bl.style.flexDirection='column';bl.style.alignItems='stretch';
+  [['screen','선생님 화면 (screen)'],['normal','학생 화면 (그대로)']].forEach(([v,n])=>{
+    const x=el('button');x.textContent=n;x.setAttribute('aria-pressed',String(blend===v));
+    x.onclick=()=>{blend=v;render()};bl.appendChild(x)});
+  o.appendChild(bl);
+  const ck=el('div','cur');ck.style.flexWrap='wrap';
+  const bb=el('button');bb.textContent='배경';bb.setAttribute('aria-pressed',String(showBg));
+  bb.onclick=()=>{showBg=!showBg;render()};
+  const sb=el('button');sb.textContent='슬롯 테두리';sb.setAttribute('aria-pressed',String(showSlots));
+  sb.onclick=()=>{showSlots=!showSlots;render()};
+  ck.append(bb,sb);o.appendChild(ck);
+  const n=el('div','gnote');
+  n.innerHTML=(isAtk?'FX 는 <b>학생 자리</b>(200px)에 뜨고 학생 스프라이트는 감춰집니다. 보스가 표적입니다.'
+    :'FX 는 <b>보스 자리</b>(318px)에 뜨고 보스 스프라이트는 감춰집니다. 학생이 표적입니다.')
+    +'<br><br>원본 '+cur.canvas+' 을 그 크기로 늘려 그립니다.'
+    +(blend==='screen'?'<br><br><b>screen 합성에서는 어두운 픽셀이 거의 안 보입니다.</b> 체커 위에서 거슬리던 검은 잔재가 여기서는 이미 안 보일 수 있습니다.':'');
+  o.appendChild(n);
+  wrap.appendChild(o);
+  return wrap;
+}
+
 function play(){
   clearTimeout(playT);
   const im=$('#seqimg');if(!im||!seq.length)return;
+  const gm=$('#gamefx');
   const D=delays();let k=0;
-  const step=()=>{im.src=furl(seq[k].src,seq[k].i)+'&t='+nEdits(seq[k].src,seq[k].i);
+  const step=()=>{const u=furl(seq[k].src,seq[k].i)+'&t='+nEdits(seq[k].src,seq[k].i);
+    im.src=u;if(gm)gm.src=u;
     const d=D[k];k=(k+1)%seq.length;playT=setTimeout(step,d)};
   step();
 }

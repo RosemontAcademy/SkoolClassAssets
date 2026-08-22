@@ -82,9 +82,23 @@ function save(body) {
     picked.push(px);
   }
 
-  const per = fitMs ? Math.max(20, Math.round(fitMs / picked.length / 10) * 10)
-    : (delayMs || framesOf(dir, kind, seq[0].src).delay);
+  // 0번 장은 이펙트가 아직 없는 맨 스프라이트다. 다른 장과 같은 시간을 주면
+  // 공격이 시작되기 전에 화면이 멈춰 있는 것처럼 보인다.
+  let per;
+  if (fitMs) {
+    const round10 = v => Math.max(20, Math.round(v / 10) * 10);
+    if (body.leadShort && picked.length > 1) {
+      const lead = round10(Math.min(160, fitMs * 0.06));
+      const rest = round10((fitMs - lead) / (picked.length - 1));
+      per = [lead, ...Array(picked.length - 1).fill(rest)];
+    } else {
+      per = round10(fitMs / picked.length);
+    }
+  } else {
+    per = delayMs || framesOf(dir, kind, seq[0].src).delay;
+  }
   const buf = encodeGif(w, h, picked, per);
+  const loopMs = Array.isArray(per) ? per.reduce((a, b) => a + b, 0) : per * picked.length;
 
   const target = join(FXD, dir, `${dir}-${kind}-fx.gif`);
   if (existsSync(target)) {
@@ -95,13 +109,15 @@ function save(body) {
   writeFileSync(target, buf);
 
   // 조리법도 같이 남긴다 — 같은 결과를 언제든 다시 만들 수 있게
-  const recipe = { species: dir, kind, canvas: `${w}x${h}`, delay_ms: per, frames: picked.length, steps: seq, saved_at: new Date().toISOString() };
+  const recipe = { species: dir, kind, canvas: `${w}x${h}`, delay_ms: per, loop_ms: loopMs,
+    lead_short: !!body.leadShort, fit_ms: fitMs || null,
+    frames: picked.length, steps: seq, saved_at: new Date().toISOString() };
   writeFileSync(join(FXD, dir, `recipe.${kind}.json`), JSON.stringify(recipe, null, 2));
 
   cache.delete(`${dir}|${kind}|old`);
   const rel = `skillFX/${dir}/${dir}-${kind}-fx.gif`;
   return {
-    ok: true, frames: picked.length, delay_ms: per, loop_ms: per * picked.length,
+    ok: true, frames: picked.length, delay_ms: per, loop_ms: loopMs,
     file: rel,
     purge: `https://purge.jsdelivr.net/gh/${REPO}@main/${rel}`,
   };
@@ -116,7 +132,13 @@ const server = createServer((req, res) => {
   try {
     if (url.pathname === '/') return send(res, 200, 'text/html; charset=utf-8', PAGE);
 
-    if (url.pathname === '/api/items') return json(res, 200, listItems(FXD));
+    if (url.pathname === '/api/items') {
+      // 이미 조리법을 저장한 종은 목록에서 표시해 준다 — 62개를 여러 날에 걸쳐
+      // 작업하니 어디까지 했는지가 안 보이면 같은 걸 또 만지게 된다.
+      return json(res, 200, listItems(FXD).map(it => ({
+        ...it, done: existsSync(join(FXD, it.dir, `recipe.${it.kind}.json`)),
+      })));
+    }
 
     if (url.pathname === '/api/frames') {
       const dir = url.searchParams.get('dir'), kind = url.searchParams.get('kind'), src = url.searchParams.get('src');
@@ -294,7 +316,7 @@ async function boot(){
   items=await (await fetch('/api/items')).json();
   const L=$('#list');
   items.forEach(it=>{const d=el('div','it');d.dataset.id=it.id;
-    d.innerHTML='<span>'+it.dir.replace(/^\\d+-/,'')+'</span><small>'+it.kind+'</small>';
+    d.innerHTML='<span>'+it.dir.replace(/^\\d+-/,'')+'</span><small>'+it.kind+'</small>'+(it.done?'<span class="done">●</span>':'');
     d.onclick=()=>load(it);L.appendChild(d)});
 }
 async function load(it){
@@ -311,8 +333,8 @@ function render(){
   const b=$('#bar');b.innerHTML='';
   const t=el('span','lbl');t.textContent=cur.dir+' · '+cur.kind+' · '+cur.canvas;b.appendChild(t);
   cur.sources.forEach(s=>{const x=el('button');x.textContent=s.label+' 전부';
-    x.onclick=()=>{seq=meta[s.id].fills.map((_,i)=>({src:s.id,i}));render()};b.appendChild(x)});
-  const cl=el('button');cl.textContent='비우기';cl.onclick=()=>{seq=[];render()};b.appendChild(cl);
+    x.onclick=()=>{push();seq=meta[s.id].fills.map((_,i)=>({src:s.id,i}));render()};b.appendChild(x)});
+  const cl=el('button');cl.textContent='비우기';cl.onclick=()=>{push();seq=[];render()};b.appendChild(cl);
   b.appendChild(gap());
   b.appendChild(lab('배경'));
   [['체커',''],['어두움','dark'],['밝음','light'],['회색','grey'],['없음','none']].forEach(([n,v])=>{
@@ -325,19 +347,34 @@ function render(){
   b.appendChild(lab('창'));
   [1500,2000,3000].forEach(v=>{const x=el('button');x.textContent=(v/1000)+'초';x.setAttribute('aria-pressed',String(fit===v));
     x.onclick=()=>{fit=v;render()};b.appendChild(x)});
+  const ls=el('button');ls.textContent='첫 장 짧게';ls.setAttribute('aria-pressed',String(leadShort));
+  ls.title='0번 장은 이펙트가 없는 맨 스프라이트라 짧게 주는 게 자연스럽습니다';
+  ls.onclick=()=>{leadShort=!leadShort;render()};b.appendChild(ls);
+  const ud=el('button');ud.textContent='되돌리기';ud.disabled=!undoStack.length;
+  ud.onclick=()=>{const p=undoStack.pop();if(p){seq=JSON.parse(p);render()}};b.appendChild(ud);
   const sv=el('button','primary');sv.textContent='저장';sv.disabled=!seq.length;sv.onclick=save;b.appendChild(sv);
 
   const W=$('#work');W.innerHTML='';
   cur.sources.forEach(s=>W.appendChild(strip(s)));
   W.appendChild(seqRow());
-  const per=seq.length?Math.max(20,Math.round(fit/seq.length/10)*10):0;
+  const D=delays();const loop=D.reduce((a,b)=>a+b,0);
   const info=el('div','msg');
-  info.innerHTML=seq.length?seq.length+'장 · 장당 <b>'+per+'ms</b> · 한 바퀴 <b>'+(per*seq.length)+'ms</b> → 창 '+(fit/1000)+'초 안에서 <b>'+(fit/(per*seq.length)).toFixed(2)+'바퀴</b>'
+  info.innerHTML=seq.length
+    ? seq.length+'장 · '+(leadShort&&seq.length>1?'첫 장 <b>'+D[0]+'ms</b> + 나머지 <b>'+D[1]+'ms</b>':'장당 <b>'+D[0]+'ms</b>')
+      +' · 한 바퀴 <b>'+loop+'ms</b> → 창 '+(fit/1000)+'초 안에서 <b>'+(fit/loop).toFixed(2)+'바퀴</b>'
     :'낱장을 눌러 크게 보고, ＋로 담으세요.';
   W.appendChild(info);
   if(openEd) W.appendChild(editor());
   play();
 }
+function delays(){
+  if(!seq.length)return [0];
+  const r10=v=>Math.max(20,Math.round(v/10)*10);
+  if(leadShort&&seq.length>1){const lead=r10(Math.min(160,fit*0.06));
+    return [lead,...Array(seq.length-1).fill(r10((fit-lead)/(seq.length-1)))]}
+  return Array(seq.length).fill(r10(fit/seq.length));
+}
+function push(){undoStack.push(JSON.stringify(seq));if(undoStack.length>40)undoStack.shift()}
 const gap=()=>{const s=el('span');s.style.flex='1';return s};
 const lab=t=>{const s=el('span','lbl');s.textContent=t;return s};
 
@@ -355,7 +392,7 @@ function strip(s){
     const m=el('div','m');m.textContent=i+' · '+f+'%'+(blank?' 빔':'');b.appendChild(m);
     b.onclick=()=>{openEd={src:s.id,i};render();setTimeout(()=>document.querySelector('.ed').scrollIntoView({behavior:'smooth',block:'nearest'}),30)};
     const a=el('button','add');a.textContent='＋';a.title='만든 것에 담기';
-    a.onclick=e=>{e.stopPropagation();seq.push({src:s.id,i});render()};b.appendChild(a);
+    a.onclick=e=>{e.stopPropagation();push();seq.push({src:s.id,i});render()};b.appendChild(a);
     b.addEventListener('dragstart',e=>{drag={kind:'add',src:s.id,i};b.classList.add('dragging');e.dataTransfer.effectAllowed='copy'});
     b.addEventListener('dragend',()=>{b.classList.remove('dragging');clearMark();drag=null});
     sp.appendChild(b);
@@ -373,14 +410,14 @@ function seqRow(){
     const m=el('div','m');m.textContent=(s.src==='old'?'지금':'새')+s.i;b.appendChild(m);
     const ops=el('div','ops');
     [['◀',-1],['▶',1],['×',0]].forEach(([t,d])=>{const x=el('button',d===0?'x':'');x.textContent=t;
-      x.onclick=e=>{e.stopPropagation();if(d===0)seq.splice(n,1);else{const j=n+d;if(j<0||j>=seq.length)return;[seq[n],seq[j]]=[seq[j],seq[n]]}render()};ops.appendChild(x)});
+      x.onclick=e=>{e.stopPropagation();push();if(d===0)seq.splice(n,1);else{const j=n+d;if(j<0||j>=seq.length)return;[seq[n],seq[j]]=[seq[j],seq[n]]}render()};ops.appendChild(x)});
     b.appendChild(ops);
     b.addEventListener('dragstart',e=>{drag={kind:'move',n};b.classList.add('dragging');e.dataTransfer.effectAllowed='move'});
     b.addEventListener('dragend',()=>{b.classList.remove('dragging');clearMark();drag=null});
     sp.appendChild(b);
   });
   sp.addEventListener('dragover',e=>{if(!drag)return;e.preventDefault();markAt(sp,e.clientX)});
-  sp.addEventListener('drop',e=>{if(!drag)return;e.preventDefault();
+  sp.addEventListener('drop',e=>{if(!drag)return;e.preventDefault();push();
     const at=markIndex(sp);
     if(drag.kind==='add')seq.splice(at,0,{src:drag.src,i:drag.i});
     else{const [m]=seq.splice(drag.n,1);seq.splice(at>drag.n?at-1:at,0,m)}
@@ -401,16 +438,17 @@ function markIndex(box){
   return seq.length;
 }
 function play(){
-  clearInterval(playT);
+  clearTimeout(playT);
   const im=$('#seqimg');if(!im||!seq.length)return;
-  const per=Math.max(20,Math.round(fit/seq.length/10)*10);
-  let k=0;im.src=furl(seq[0].src,seq[0].i)+'&t='+nEdits(seq[0].src,seq[0].i);
-  playT=setInterval(()=>{k=(k+1)%seq.length;im.src=furl(seq[k].src,seq[k].i)+'&t='+nEdits(seq[k].src,seq[k].i)},per);
+  const D=delays();let k=0;
+  const step=()=>{im.src=furl(seq[k].src,seq[k].i)+'&t='+nEdits(seq[k].src,seq[k].i);
+    const d=D[k];k=(k+1)%seq.length;playT=setTimeout(step,d)};
+  step();
 }
 async function save(){
   const steps=seq.map(s=>({src:s.src,i:s.i,erase:edits[K(s.src,s.i)]||[]}));
   const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dir:cur.dir,kind:cur.kind,seq:steps,fitMs:fit})});
+    body:JSON.stringify({dir:cur.dir,kind:cur.kind,seq:steps,fitMs:fit,leadShort})});
   const j=await r.json();
   const m=el('div','msg '+(j.ok?'ok':'err'));
   m.innerHTML=j.ok?'저장했습니다 — '+j.frames+'장 · 한 바퀴 '+j.loop_ms+'ms<br>옛 파일은 _prev/ 에. 올린 뒤 CDN 비우기: <code>'+j.purge+'</code>':'실패: '+j.error;

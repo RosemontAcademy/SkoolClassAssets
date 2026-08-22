@@ -33,14 +33,22 @@ export function readFrames(path) {
 
 const MAGENTA = 0xFF00FF;
 
-/** delay 는 ms. gif는 10ms 단위로만 저장하니 그 단위로 맞춰 들어와야 한다. */
+/**
+ * delay 는 ms. gif는 10ms 단위로만 저장하니 그 단위로 맞춰 들어와야 한다.
+ * 숫자 하나를 주면 전부 같은 간격, 배열을 주면 **장마다 다른 간격**이 된다.
+ * 장마다 다르게 줄 수 있어야 하는 이유: 0번 장은 이펙트가 아직 없는 맨 스프라이트라,
+ * 다른 장과 같은 시간을 주면 공격이 시작되기 전에 멈춰 있는 것처럼 보인다.
+ */
 export function encodeGif(w, h, frames, delayMs) {
+  const per = Array.isArray(delayMs) ? delayMs : null;
   const enc = new GifEncoder(w, h, 'neuquant', true, frames.length);
-  enc.setDelay(delayMs);
+  if (!per) enc.setDelay(delayMs);
   enc.setRepeat(0);
   enc.setTransparent(MAGENTA);
   enc.start();
-  for (const src of frames) {
+  for (let k = 0; k < frames.length; k++) {
+    const src = frames[k];
+    if (per) enc.setDelay(per[k] ?? per[per.length - 1]);
     // gif-encoder-2 는 RGBA 를 읽는다. 투명 픽셀을 마젠타로 칠해 두면
     // 투명 인덱스가 팔레트에서 정확히 잡힌다.
     const px = new Uint8Array(src);

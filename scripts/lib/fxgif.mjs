@@ -53,24 +53,100 @@ export function encodeGif(w, h, frames, delayMs) {
   return enc.out.getData();
 }
 
-/** 지운 자국을 실제로 없앤다. 동그라미는 거리 제곱으로 재서 화면의 지우개와 모양이 같다. */
-export function rubOut(px, w, h, strokes) {
-  for (const st of strokes || []) {
+/**
+ * 손질 한 벌을 낱장에 적용한다. 화면의 붓과 **같은 모양**으로 계산해야 해서
+ * 동그라미는 거리 제곱으로 잰다(사각형 근사로 하면 화면과 결과가 달라진다).
+ *
+ *   { t:'c', x, y, r }                   동그랗게 지우기
+ *   { t:'r', x, y, w, h }                네모나게 지우기
+ *   { t:'p', x, y, r, color:[r,g,b] }    동그랗게 칠하기
+ *   { t:'swap', from:[r,g,b], to:[r,g,b], tol }  그 색을 저 색으로 (tol = 허용 오차)
+ */
+export function applyEdits(px, w, h, edits) {
+  const circle = (st, fn) => {
+    const rr = st.r * st.r;
+    const x0 = Math.max(0, Math.floor(st.x - st.r)), y0 = Math.max(0, Math.floor(st.y - st.r));
+    const x1 = Math.min(w, Math.ceil(st.x + st.r)), y1 = Math.min(h, Math.ceil(st.y + st.r));
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      const dx = x + 0.5 - st.x, dy = y + 0.5 - st.y;
+      if (dx * dx + dy * dy <= rr) fn((y * w + x) * 4);
+    }
+  };
+  for (const st of edits || []) {
     if (st.t === 'r') {
       const x0 = Math.max(0, Math.floor(st.x)), y0 = Math.max(0, Math.floor(st.y));
       const x1 = Math.min(w, Math.ceil(st.x + st.w)), y1 = Math.min(h, Math.ceil(st.y + st.h));
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) px[(y * w + x) * 4 + 3] = 0;
-    } else {
-      const rr = st.r * st.r;
-      const x0 = Math.max(0, Math.floor(st.x - st.r)), y0 = Math.max(0, Math.floor(st.y - st.r));
-      const x1 = Math.min(w, Math.ceil(st.x + st.r)), y1 = Math.min(h, Math.ceil(st.y + st.r));
-      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-        const dx = x + 0.5 - st.x, dy = y + 0.5 - st.y;
-        if (dx * dx + dy * dy <= rr) px[(y * w + x) * 4 + 3] = 0;
+    } else if (st.t === 'c') {
+      circle(st, i => { px[i + 3] = 0; });
+    } else if (st.t === 'p') {
+      const [r, g, b] = st.color || [255, 255, 255];
+      circle(st, i => { px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255; });
+    } else if (st.t === 'swap') {
+      const [fr, fg, fb] = st.from, [tr, tg, tb] = st.to;
+      const tol = (st.tol ?? 20) ** 2 * 3;
+      for (let i = 0; i < w * h * 4; i += 4) {
+        if (px[i + 3] < 40) continue;
+        const dr = px[i] - fr, dg = px[i + 1] - fg, db = px[i + 2] - fb;
+        if (dr * dr + dg * dg + db * db <= tol) { px[i] = tr; px[i + 1] = tg; px[i + 2] = tb; }
       }
+    } else if (st.t === 'fill') {
+      // 페인트통. 누른 자리와 '비슷한 색'으로 이어진 덩어리만 칠한다.
+      const sx = Math.floor(st.x), sy = Math.floor(st.y);
+      if (sx < 0 || sy < 0 || sx >= w || sy >= h) continue;
+      const si = (sy * w + sx) * 4;
+      const seed = [px[si], px[si + 1], px[si + 2], px[si + 3]];
+      const [tr, tg, tb] = st.color;
+      const tol = (st.tol ?? 20) ** 2 * 3;
+      const near = i => {
+        // 투명끼리도 이어진 것으로 본다(빈 곳을 칠해 메울 수 있게)
+        if (seed[3] < 40) return px[i + 3] < 40;
+        if (px[i + 3] < 40) return false;
+        const dr = px[i] - seed[0], dg = px[i + 1] - seed[1], db = px[i + 2] - seed[2];
+        return dr * dr + dg * dg + db * db <= tol;
+      };
+      const seen = new Uint8Array(w * h);
+      const stack = [sy * w + sx];
+      seen[sy * w + sx] = 1;
+      while (stack.length) {
+        const p = stack.pop(), i = p * 4;
+        if (!near(i)) continue;
+        px[i] = tr; px[i + 1] = tg; px[i + 2] = tb; px[i + 3] = 255;
+        const x = p % w, y = (p / w) | 0;
+        if (x > 0 && !seen[p - 1]) { seen[p - 1] = 1; stack.push(p - 1); }
+        if (x < w - 1 && !seen[p + 1]) { seen[p + 1] = 1; stack.push(p + 1); }
+        if (y > 0 && !seen[p - w]) { seen[p - w] = 1; stack.push(p - w); }
+        if (y < h - 1 && !seen[p + w]) { seen[p + w] = 1; stack.push(p + w); }
+      }
+    } else if (st.t === 'shift') {
+      // 낱장 전체를 몇 칸 옮긴다. 한 장만 어긋나 있을 때 쓴다.
+      const out = new Uint8Array(px.length);
+      const dx = Math.round(st.dx), dy = Math.round(st.dy);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const sx = x - dx, sy = y - dy;
+        if (sx < 0 || sy < 0 || sx >= w || sy >= h) continue;
+        const s = (sy * w + sx) * 4, d = (y * w + x) * 4;
+        out[d] = px[s]; out[d + 1] = px[s + 1]; out[d + 2] = px[s + 2]; out[d + 3] = px[s + 3];
+      }
+      px.set(out);
     }
   }
 }
+
+/** 낱장에 실제로 쓰인 색을 많이 쓰인 순서로. 픽셀아트라 색이 몇 개 안 된다. */
+export function paletteOf(px, w, h, max = 48) {
+  const freq = new Map();
+  for (let i = 0; i < w * h * 4; i += 4) {
+    if (px[i + 3] < 40) continue;
+    const k = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
+    freq.set(k, (freq.get(k) || 0) + 1);
+  }
+  return [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, max)
+    .map(([k, n]) => ({ hex: '#' + k.toString(16).padStart(6, '0'), n }));
+}
+
+/** 지우기만 하던 옛 이름. mix_frames 의 글자 목록이 아직 이 모양을 쓴다. */
+export const rubOut = applyEdits;
 
 /** 알파가 있는 픽셀 비율. 낱장이 비었는지 판단하는 데 쓴다. */
 export function fillRatio(px, w, h, alpha = 40) {

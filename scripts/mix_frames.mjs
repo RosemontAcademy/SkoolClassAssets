@@ -35,8 +35,7 @@
 import { readFileSync, existsSync, mkdirSync, copyFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { GifReader } from 'omggif';
-import GifEncoder from 'gif-encoder-2';
+import { readFrames, encodeGif, rubOut } from './lib/fxgif.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FXD = join(__dirname, '..', 'skillFX');
@@ -51,48 +50,6 @@ const fitMs = args.includes('--fit') ? parseInt(args[args.indexOf('--fit') + 1],
 if (!listPath || !existsSync(listPath)) {
   console.error('사용법: node scripts/mix_frames.mjs <목록파일> [--dry] [--keep] [--delay N]');
   process.exit(1);
-}
-
-/**
- * Every frame in these gifs is full-canvas with disposal=2 (restore to background),
- * so each must be decoded onto a CLEARED buffer. Blitting cumulatively silently
- * stacks each frame onto the one before it.
- */
-function readFrames(path) {
-  const r = new GifReader(readFileSync(path));
-  const size = r.width * r.height * 4;
-  const frames = [];
-  let prev = null;
-  for (let i = 0; i < r.numFrames(); i++) {
-    const info = r.frameInfo(i);
-    const buf = new Uint8Array(size);
-    if (prev && (info.disposal === 0 || info.disposal === 1)) buf.set(prev);
-    r.decodeAndBlitFrameRGBA(i, buf);
-    prev = buf;
-    frames.push(buf);
-  }
-  return { w: r.width, h: r.height, frames, delay: (r.frameInfo(0).delay || 25) * 10 };
-}
-
-const MAGENTA = 0xFF00FF;
-
-function encode(w, h, frames, delayMs) {
-  const enc = new GifEncoder(w, h, 'neuquant', true, frames.length);
-  enc.setDelay(delayMs);
-  enc.setRepeat(0);
-  enc.setTransparent(MAGENTA);
-  enc.start();
-  for (const src of frames) {
-    // gif-encoder-2 reads RGBA; paint every transparent pixel magenta so the
-    // palette match for the transparent index is exact.
-    const px = new Uint8Array(src);
-    for (let i = 0; i < px.length; i += 4) {
-      if (px[i + 3] === 0) { px[i] = 255; px[i + 1] = 0; px[i + 2] = 255; }
-    }
-    enc.addFrame(px);
-  }
-  enc.finish();
-  return enc.out.getData();
 }
 
 const raw = readFileSync(listPath, 'utf8').split(/\r?\n/)
@@ -113,26 +70,6 @@ for (const l of raw) {
     return null;
   }).filter(Boolean);
   if (strokes.length) rubs.set(id.replace(/\s+/g, ' ') + '|' + side + idx, strokes);
-}
-
-/** Clears the rubbed-out pixels in place. Circles use a squared-distance test so
- *  the shape matches what the canvas eraser drew on screen. */
-function rubOut(px, w, h, strokes) {
-  for (const st of strokes) {
-    if (st.t === 'r') {
-      const x0 = Math.max(0, Math.floor(st.x)), y0 = Math.max(0, Math.floor(st.y));
-      const x1 = Math.min(w, Math.ceil(st.x + st.w)), y1 = Math.min(h, Math.ceil(st.y + st.h));
-      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) px[(y * w + x) * 4 + 3] = 0;
-    } else {
-      const rr = st.r * st.r;
-      const x0 = Math.max(0, Math.floor(st.x - st.r)), y0 = Math.max(0, Math.floor(st.y - st.r));
-      const x1 = Math.min(w, Math.ceil(st.x + st.r)), y1 = Math.min(h, Math.ceil(st.y + st.r));
-      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-        const dx = x + 0.5 - st.x, dy = y + 0.5 - st.y;
-        if (dx * dx + dy * dy <= rr) px[(y * w + x) * 4 + 3] = 0;
-      }
-    }
-  }
 }
 
 let done = 0, skipped = 0;
@@ -188,7 +125,7 @@ for (const line of lines) {
     (fitMs && Math.abs(loopMs - fitMs) > 60 ? `  ⚠ 목표 ${fitMs}ms와 ${loopMs - fitMs > 0 ? '+' : ''}${loopMs - fitMs}ms 차이` : '');
   if (dry) { console.log('  ' + label + '  → ' + target.split(/[\\/]/).pop()); continue; }
 
-  const buf = encode(src.old.w, src.old.h, picked, delayMs);
+  const buf = encodeGif(src.old.w, src.old.h, picked, delayMs);
   if (!keep && existsSync(target)) {
     const prev = join(FXD, dir, '_prev');
     mkdirSync(prev, { recursive: true });

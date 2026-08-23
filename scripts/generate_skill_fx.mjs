@@ -379,7 +379,10 @@ const CHARACTERS = {
   vileplume: {
     spriteId: 45, canvasSize: 128,
     attackAction:  'a huge burst of glowing white-yellow sunlight explodes out of the big red flower and floods the whole top-right half of the canvas with bright rays, growing larger each frame, vileplume stands small at the bottom-left corner facing right, side view',
-    attackedAction:'a wide blazing white-yellow beam of sunlight pours out of the big red flower and floods the whole bottom-left half of the canvas, growing brighter each frame, vileplume stands small at the top-right corner facing the viewer, front view',
+    // 공격 쪽은 이 문장으로 성공했고 맞는 쪽만 「빔이 쏟아지고 growing brighter」 였는데,
+    // 그때 캐릭터가 통째로 어두워져 8%까지 사라졌다. 성공한 문장을 방향만 뒤집어 쓴다.
+    // 「매 장에 온전히 보인다」 를 붙인 것도 그래서다.
+    attackedAction:'a huge burst of glowing white-yellow sunlight explodes out of the big red flower and floods the whole bottom-left half of the canvas with bright rays, growing larger each frame, vileplume stands small at the top-right corner facing the viewer and stays fully visible in every frame, front view',
     hitColor: 0xE4FF52FF, hitShape: 'star', elemental: true,
     hitDescription: 'solar beam impact, a blinding yellow-green light detonation with straight rays shooting outward like a compass rose, pixel art',
     hitAction: 'rays shoot out to full length together, then fade from the tips inward leaving a dimming afterglow',

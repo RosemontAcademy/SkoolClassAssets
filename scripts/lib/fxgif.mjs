@@ -163,11 +163,23 @@ export function fillRatio(px, w, h, alpha = 40) {
   return n / (w * h);
 }
 
-/** 한 종·한 종류가 가진 재료 파일들. -fx.gif(지금 쓰는 것)와 -fx-v2/-v3…(다시 구운 것). */
+/**
+ * 한 종·한 종류의 **재료** 파일들.
+ *
+ * `-fx.gif` 는 게임이 읽는 **결과물**이라 저장할 때마다 덮어써진다. 그걸 재료로도 쓰면
+ * 4장짜리로 저장하는 순간 7장이던 재료가 4장이 되고, 버린 3장은 되찾을 수 없다.
+ * 그래서 처음 저장하기 전에 원본을 `bakes/{kind}-orig.gif` 로 떠 두고, 재료는 거기서 읽는다.
+ */
+export function origPath(fxRoot, dir, kind) {
+  return join(fxRoot, dir, 'bakes', `${kind}-orig.gif`);
+}
+
 export function sourcesFor(fxRoot, dir, kind) {
   const out = [];
-    const base = join(fxRoot, dir, `${dir}-${kind}-fx.gif`);
-  if (existsSync(base)) out.push({ id: 'old', label: '지금 쓰는 것', path: base });
+  const orig = origPath(fxRoot, dir, kind);
+  const live = join(fxRoot, dir, `${dir}-${kind}-fx.gif`);
+  if (existsSync(orig)) out.push({ id: 'old', label: '원본', path: orig });
+  else if (existsSync(live)) out.push({ id: 'old', label: '지금 쓰는 것', path: live });
   for (let v = 2; v <= 9; v++) {
     const p = join(fxRoot, dir, `${dir}-${kind}-fx-v${v}.gif`);
     if (existsSync(p)) out.push({ id: v === 2 ? 'new' : 'v' + v, label: `다시 구운 것 v${v}`, path: p });

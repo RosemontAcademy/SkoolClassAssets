@@ -26,7 +26,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, spawnSync } from 'child_process';
 import { PNG } from 'pngjs';
-import { readFrames, encodeGif, applyEdits, fillRatio, paletteOf, listItems, sourcesFor } from './lib/fxgif.mjs';
+import { readFrames, encodeGif, applyEdits, fillRatio, paletteOf, listItems, sourcesFor, origPath } from './lib/fxgif.mjs';
 
 // 경로는 전부 이 파일 위치 기준이다. 이동식 SSD라 드라이브 문자가 바뀌고,
 // 어느 폴더에서 실행하든 같게 동작해야 한다.
@@ -146,6 +146,15 @@ function save(body) {
   const loopMs = Array.isArray(per) ? per.reduce((a, b) => a + b, 0) : per * picked.length;
 
   const target = join(FXD, dir, `${dir}-${kind}-fx.gif`);
+
+  // 처음 저장하기 전에 원본을 떠 둔다. 이걸 안 하면 결과물이 재료를 덮어써서
+  // 다음에 열었을 때 쓸 수 있는 낱장이 줄어 있다(4장으로 저장 → 재료도 4장).
+  const orig = origPath(FXD, dir, kind);
+  if (!existsSync(orig) && existsSync(target)) {
+    mkdirSync(dirname(orig), { recursive: true });
+    copyFileSync(target, orig);
+  }
+
   if (existsSync(target)) {
     const prev = join(FXD, dir, '_prev');
     mkdirSync(prev, { recursive: true });
@@ -159,6 +168,7 @@ function save(body) {
     frames: picked.length, steps: seq, saved_at: new Date().toISOString() };
   writeFileSync(join(FXD, dir, `recipe.${kind}.json`), JSON.stringify(recipe, null, 2));
 
+  // 결과물이 바뀌었을 뿐 재료(bakes/원본)는 그대로다. 캐시는 그래도 비워 둔다.
   cache.delete(`${dir}|${kind}|old`);
   const rel = `skillFX/${dir}/${dir}-${kind}-fx.gif`;
   return {
@@ -190,7 +200,11 @@ function pending() {
     if (!line.trim()) continue;
     const p = line.slice(3).replace(/^"|"$/g, '');
     if (p.includes('/_prev/')) continue;                       // 로컬 백업은 안 올린다
-    if (/skillFX\/[^/]+\/[^/]+-fx\.gif$/.test(p) || /skillFX\/[^/]+\/recipe\.[a-z]+\.json$/.test(p)) files.push(p);
+    // 결과물 · 조리법 · 재료(bakes) 셋을 올린다. 재료가 빠지면 다른 PC 에서
+    // 같은 조리법을 돌려도 다른 그림이 나온다 — 조리법이 재료를 가리키기 때문이다.
+    if (/skillFX\/[^/]+\/[^/]+-fx\.gif$/.test(p)
+      || /skillFX\/[^/]+\/recipe\.[a-z]+\.json$/.test(p)
+      || /skillFX\/[^/]+\/bakes\/[^/]+\.gif$/.test(p)) files.push(p);
   }
   return [...new Set(files)];
 }
@@ -577,7 +591,24 @@ const PANEL_H=Math.min(540,Math.max(300,Math.round(CANVAS[1]*0.56)));
 const SCENE_H=CANVAS[1]-PANEL_H;
 let items=[],cur=null,meta={},seq=[],edits={},fit=3000,zoom=1,playT=null,openEd=null;
 let leadShort=true,undoStack=[],blend='screen',showBg=true,showSlots=false,pinGame=true;
-const furl=(src,i)=>'/frame.png?dir='+encodeURIComponent(cur.dir)+'&kind='+cur.kind+'&src='+src+'&i='+i;
+const rawURL=(src,i)=>'/frame.png?dir='+encodeURIComponent(cur.dir)+'&kind='+cur.kind+'&src='+src+'&i='+i;
+// 손질한 낱장은 서버가 아니라 여기서 만든 그림을 쓴다. 안 그러면 지우거나 칠한 것이
+// 썸네일·조립 미리보기·게임 화면에 안 보이고, 저장한 뒤에야 나타난다.
+const editedCache={};
+const furl=(src,i)=>editedCache[K(src,i)]||rawURL(src,i);
+function buildEdited(src,i,done){
+  const k=K(src,i), st=edits[k];
+  if(!st||!st.length){delete editedCache[k];done&&done();return}
+  const img=new Image();
+  img.onload=()=>{
+    const c=document.createElement('canvas');c.width=img.width;c.height=img.height;
+    const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(img,0,0);
+    for(const t of st)applyOne(x,t,img.width,img.height);
+    editedCache[k]=c.toDataURL('image/png');done&&done();
+  };
+  img.onerror=()=>{done&&done()};
+  img.src=rawURL(src,i);
+}
 const K=(src,i)=>src+i;
 const nEdits=(src,i)=>(edits[K(src,i)]||[]).length;
 
@@ -597,7 +628,15 @@ async function load(it){
   const r=await (await fetch('/api/recipe?dir='+encodeURIComponent(it.dir)+'&kind='+it.kind)).json();
   if(r&&r.steps){seq=r.steps.map(s=>({src:s.src,i:s.i}));r.steps.forEach(s=>{if(s.erase&&s.erase.length)edits[K(s.src,s.i)]=s.erase})}
   else seq=meta.old.fills.map((_,i)=>({src:'old',i}));
-  render();
+  undoStack=[];                                  // 다른 종의 순서로 되돌아가면 안 된다
+  Object.keys(editedCache).forEach(k=>delete editedCache[k]);
+  const ks=Object.keys(edits);
+  let left=ks.length;
+  if(!left){render();return}
+  ks.forEach(k=>{const m=/^(old|new|v\d)(\d+)$/.exec(k);
+    if(!m){left--;return}
+    buildEdited(m[1],+m[2],()=>{if(--left<=0)render()})});
+  if(left<=0)render();
 }
 function render(){
   const b=$('#bar');b.innerHTML='';
@@ -666,7 +705,7 @@ function strip(s){
     const f=meta[s.id].fills[i],blank=i>0&&f<meta[s.id].fills[0]*0.25;
     const b=el('div','fr'+(blank?' blank':'')+(nEdits(s.id,i)?' edited':'')+(openEd&&openEd.src===s.id&&openEd.i===i?' sel':''));
     b.draggable=true;
-    const img=el('img');img.src=furl(s.id,i)+'&t='+nEdits(s.id,i);b.appendChild(img);
+    const img=el('img');img.src=furl(s.id,i);b.appendChild(img);
     const m=el('div','m');m.textContent=i+' · '+f+'%'+(blank?' 빔':'');b.appendChild(m);
     b.onclick=()=>{openEd={src:s.id,i};render();setTimeout(()=>document.querySelector('.ed').scrollIntoView({behavior:'smooth',block:'nearest'}),30)};
     const a=el('button','add');a.textContent='＋';a.title='만든 것에 담기';
@@ -686,7 +725,7 @@ function seqRow(){
     const b=el('div','slot'+(s.src==='old'?' old':'')+(nEdits(s.src,s.i)?' edited':'')
       +(openEd&&openEd.src===s.src&&openEd.i===s.i?' sel':''));
     b.draggable=true;b.dataset.n=n;b.title='눌러서 이 낱장 편집';
-    const img=el('img');img.src=furl(s.src,s.i)+'&t='+nEdits(s.src,s.i);b.appendChild(img);
+    const img=el('img');img.src=furl(s.src,s.i);b.appendChild(img);
     const m=el('div','m');m.textContent=(s.src==='old'?'지금':'새')+s.i;b.appendChild(m);
     // 담아 놓고 보다가 손보고 싶어지는 게 자연스러운 순서다. 재료 줄로 되돌아가
     // 같은 낱장을 다시 찾게 만들면 안 된다.
@@ -788,7 +827,7 @@ function play(){
   const im=$('#seqimg');if(!im||!seq.length)return;
   const gm=$('#gamefx');
   const D=delays();let k=0;
-  const step=()=>{const u=furl(seq[k].src,seq[k].i)+'&t='+nEdits(seq[k].src,seq[k].i);
+  const step=()=>{const u=furl(seq[k].src,seq[k].i);
     im.src=u;if(gm)gm.src=u;
     const d=D[k];k=(k+1)%seq.length;playT=setTimeout(step,d)};
   step();
@@ -908,14 +947,27 @@ function editor(){
     if(onionOn&&openEd.i>0&&!mk){const m=el('div','onionmark');m.textContent='앞 장 비침';document.querySelector('.cw').appendChild(m)}
     if(!onionOn&&mk)mk.remove();
   };opts.appendChild(ob);
-  const ub=el('button');ub.id='eu';ub.textContent='되돌리기';ub.onclick=()=>{if(!strokes.length)return;
-    const l=strokes[strokes.length-1];if(l.t==='p'||l.t==='c'){while(strokes.length&&(strokes[strokes.length-1].t==='p'||strokes[strokes.length-1].t==='c'))strokes.pop()}else strokes.pop();redraw()};
+  const ub=el('button');ub.id='eu';ub.textContent='되돌리기';
+  ub.onclick=()=>{
+    if(!strokes.length)return;
+    // 붓질 한 번은 점 수십 개로 남는다 — 이어진 것을 한 덩어리로 되돌린다.
+    // 예전엔 'c'/'p' 만 그렇게 처리하고 이동·페인트통·색바꾸기는 아예 안 지워졌다.
+    const drag=t=>t==='c'||t==='p'||t==='shift';
+    const last=strokes[strokes.length-1].t;
+    if(drag(last)){ while(strokes.length&&strokes[strokes.length-1].t===last)strokes.pop() }
+    else strokes.pop();
+    redraw();
+  };
   const rb=el('button');rb.textContent='처음으로';rb.onclick=()=>{strokes=[];redraw()};
   opts.append(ub,rb);T.appendChild(opts);
 
   const ap=el('button','primary');ap.id='eapply';ap.textContent='이 낱장에 적용';
-  ap.onclick=()=>{const k=K(openEd.src,openEd.i);if(strokes.length)edits[k]=strokes.slice();else delete edits[k];
-    openEd=null;mountedKey=null;render()};
+  ap.onclick=()=>{
+    const k=K(openEd.src,openEd.i), src=openEd.src, i=openEd.i;
+    if(strokes.length)edits[k]=strokes.slice();else delete edits[k];
+    openEd=null;mountedKey=null;
+    buildEdited(src,i,()=>render());   // 손질한 그림을 만든 뒤에 화면을 그린다
+  };
   T.appendChild(ap);
   const hint=el('div');hint.className='cap';hint.style.textAlign='left';
   hint.innerHTML='손댄 자국은 좌표로 저장됩니다. 원본 gif 는 안 바뀝니다.<br>'
@@ -956,7 +1008,8 @@ function mount(cv,on,gr,pw){
     redraw();drawOnion(on);buildPal(pw);
     bindCanvas(cv);
   };
-  img.src=furl(openEd.src,openEd.i);
+  // 편집기는 **원본**에서 시작한다. 손질한 그림을 불러오면 같은 손질이 두 번 얹힌다.
+  img.src=rawURL(openEd.src,openEd.i);
 }
 /** 고른 색을 화면에 반영한다. render() 를 부르면 그리던 붓질이 날아간다. */
 function setColor(hex){
@@ -971,21 +1024,23 @@ const hexToRgbCss=h=>'rgb('+[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)).join(','
 function ctxOf(){return document.getElementById('cv').getContext('2d',{willReadFrequently:true})}
 function redraw(){
   const c=ctxOf();c.clearRect(0,0,base.w,base.h);c.drawImage(base.img,0,0);
-  for(const s of strokes)applyOne(c,s);
+  for(const s of strokes)applyOne(c,s,base.w,base.h);
 }
-function applyOne(c,s){
+function applyOne(c,s,W,H){
+  const w=W||base.w,h=H||base.h;
   if(s.t==='c'){c.save();c.globalCompositeOperation='destination-out';c.beginPath();c.arc(s.x,s.y,s.r,0,7);c.fill();c.restore()}
   else if(s.t==='r'){c.save();c.globalCompositeOperation='destination-out';c.fillRect(s.x,s.y,s.w,s.h);c.restore()}
   else if(s.t==='p'){c.fillStyle='rgb('+s.color.join(',')+')';c.beginPath();c.arc(s.x,s.y,s.r,0,7);c.fill()}
-  else if(s.t==='swap'||s.t==='fill'||s.t==='shift'){pixelOp(c,s)}
+  else if(s.t==='swap'||s.t==='fill'||s.t==='shift'){pixelOp(c,s,w,h)}
 }
-function pixelOp(c,s){
-  const d=c.getImageData(0,0,base.w,base.h),px=d.data,w=base.w,h=base.h;
+function pixelOp(c,s,W,H){
+  const w=W||base.w,h=H||base.h;
+  const d=c.getImageData(0,0,w,h),px=d.data;
   if(s.t==='swap'){const [fr,fg,fb]=s.from,[tr,tg,tb]=s.to,t=(s.tol??20)**2*3;
     for(let i=0;i<px.length;i+=4){if(px[i+3]<40)continue;const a=px[i]-fr,b=px[i+1]-fg,g=px[i+2]-fb;
       if(a*a+b*b+g*g<=t){px[i]=tr;px[i+1]=tg;px[i+2]=tb}}}
   else if(s.t==='fill'){
-    const sx=Math.floor(s.x),sy=Math.floor(s.y);if(sx<0||sy<0||sx>=w||sy>=h)return;
+    const sx=Math.floor(s.x),sy=Math.floor(s.y);if(sx<0||sy<0||sx>=w||sy>=h){c.putImageData(d,0,0);return}
     const si=(sy*w+sx)*4,seed=[px[si],px[si+1],px[si+2],px[si+3]],[tr,tg,tb]=s.color,t=(s.tol??20)**2*3;
     const near=i=>{if(seed[3]<40)return px[i+3]<40;if(px[i+3]<40)return false;
       const a=px[i]-seed[0],b=px[i+1]-seed[1],g=px[i+2]-seed[2];return a*a+b*b+g*g<=t};

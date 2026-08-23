@@ -1,0 +1,56 @@
+{
+  "species": "1-bulbasaur",
+  "kind": "attack",
+  "canvas": "128x128",
+  "delay_ms": [
+    90,
+    240,
+    240,
+    240,
+    240,
+    240,
+    240
+  ],
+  "loop_ms": 1530,
+  "lead_short": true,
+  "fit_ms": 1500,
+  "frames": 7,
+  "steps": [
+    {
+      "src": "old",
+      "i": 0,
+      "erase": []
+    },
+    {
+      "src": "old",
+      "i": 1,
+      "erase": []
+    },
+    {
+      "src": "old",
+      "i": 2,
+      "erase": []
+    },
+    {
+      "src": "old",
+      "i": 3,
+      "erase": []
+    },
+    {
+      "src": "old",
+      "i": 2,
+      "erase": []
+    },
+    {
+      "src": "old",
+      "i": 1,
+      "erase": []
+    },
+    {
+      "src": "old",
+      "i": 0,
+      "erase": []
+    }
+  ],
+  "saved_at": "2026-08-23T02:04:01.152Z"
+}

@@ -316,7 +316,7 @@ const CHARACTERS = {
   },
   raichu: {
     spriteId: 26, canvasSize: 128,
-    attackAction:  'raichu stands at bottom-left corner of canvas facing right, a thick bolt of yellow lightning discharges from its cheeks and long tail toward the top-right corner, the bolt forks as it streaks upper-right, side view',
+    attackAction:  'raichu stands at bottom-left corner of canvas facing right, a thick bolt of yellow lightning discharges from its cheeks and long tail toward the top-right corner and forks as it goes, the top-left area of the canvas stays completely empty, side view',
     attackedAction:'raichu stands at top-right corner of canvas facing the viewer, a thick bolt of yellow lightning discharges from its cheeks and long tail toward the bottom-left corner, the bolt forks as it streaks lower-left, front view',
     hitColor: 0xFFD028FF, hitShape: 'star', elemental: true,
     hitDescription: 'thunderbolt impact, a blinding yellow-white electric burst with thick forked branches tearing outward, pixel art',
@@ -327,14 +327,14 @@ const CHARACTERS = {
   clefairy: {
     spriteId: 35, canvasSize: 128,
     attackAction:  'clefairy stands at bottom-left corner of canvas swinging its short arm upward to the right, a soft pink impact arc trails from its fist toward the top-right corner, side view',
-    attackedAction:'clefairy stands at top-right corner of canvas facing the viewer swinging its short arm down to the left, a soft pink impact arc trails from its fist toward the bottom-left corner, front view',
+    attackedAction:'a large bright pink impact shockwave sweeps from the top-right corner down to the bottom-left corner, clearly visible in every frame, clefairy stands at the top-right corner facing the viewer swinging its short arm down to the left, front view',
     hitColor: 0xF5A9C8FF, hitShape: 'circle', elemental: false,
     hitDescription: 'pound impact, a blunt pink shockwave puff at the point of contact with a few star-shaped sparkles, pixel art',
     hitAction: 'the puff expands once and fades, sparkles drift outward and wink out',
   },
   clefable: {
     spriteId: 36, canvasSize: 128,
-    attackAction:  'clefable stands at bottom-left corner of canvas facing right, gathers a glowing pale-pink moon orb between its raised hands and fires it toward the top-right corner, the orb trails moonlight upper-right, side view',
+    attackAction:  'clefable stays exactly the same size and never moves from the bottom-left corner of canvas, facing right, only the effect moves: a glowing pale-pink moon orb leaves its raised hands and flies to the top-right corner trailing moonlight, side view',
     attackedAction:'clefable stands at top-right corner of canvas facing the viewer, gathers a glowing pale-pink moon orb between its raised hands and fires it toward the bottom-left corner, the orb trails moonlight lower-left, front view',
     hitColor: 0xF2B8E6FF, hitShape: 'ring', elemental: true,
     hitDescription: 'moonblast impact, a pale pink lunar sphere detonates into concentric rings of moonlight with drifting sparkles, pixel art',
@@ -352,7 +352,7 @@ const CHARACTERS = {
   },
   wigglytuff: {
     spriteId: 40, canvasSize: 128,
-    attackAction:  'wigglytuff stands at bottom-left corner of canvas facing right with its mouth wide open, rippling pink sound rings blast from its mouth toward the top-right corner, concentric rings travel upper-right, side view',
+    attackAction:  'wigglytuff stands at bottom-left corner of canvas facing right with its mouth wide open, small pink sound rings fly from its mouth to the top-right corner, each ring stays narrow and never grows wider than a third of the canvas, side view',
     attackedAction:'wigglytuff stands at top-right corner of canvas facing the viewer with its mouth wide open, rippling pink sound rings blast from its mouth toward the bottom-left corner, concentric rings travel lower-left, front view',
     hitColor: 0xF48FC0FF, hitShape: 'ring', elemental: false,
     hitDescription: 'hyper voice impact, loud concentric pink sound rings hammer through the target, the air distorts along each ring, pixel art',
@@ -378,7 +378,7 @@ const CHARACTERS = {
   },
   vileplume: {
     spriteId: 45, canvasSize: 128,
-    attackAction:  'vileplume stands at bottom-left corner of canvas facing right, a bright yellow-green beam of stored sunlight fires from the giant flower on its head toward the top-right corner, the beam fills the upper-right, side view',
+    attackAction:  'a thick bright yellow-green beam of sunlight shoots from the giant flower on the head of vileplume at the bottom-left corner straight to the top-right corner, the beam is wide and glowing in every frame, vileplume stands facing right, side view',
     attackedAction:'vileplume stands at top-right corner of canvas facing the viewer, a bright yellow-green beam of stored sunlight fires from the giant flower on its head toward the bottom-left corner, the beam fills the lower-left, front view',
     hitColor: 0xE4FF52FF, hitShape: 'star', elemental: true,
     hitDescription: 'solar beam impact, a blinding yellow-green light detonation with straight rays shooting outward like a compass rose, pixel art',

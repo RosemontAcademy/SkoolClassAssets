@@ -315,6 +315,23 @@ const json = (res, code, obj) => send(res, code, 'application/json; charset=utf-
 const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   try {
+    // 개발용으로 띄운 SkoolClass(http://localhost:5173)에서 이 서버를 부를 수 있게 연다.
+    //
+    // 배포된 SkoolClass(https)에서는 **이걸 달아도 안 열린다.** 크롬은 공개 사이트가
+    // 집 안 주소를 부르는 걸 권한으로 막아 "Permission was denied for this request"
+    // 로 끝난다(2026-08-23 실측). 그래서 설정 화면의 「FX 편집기」 단추는 찔러 보지
+    // 않고 그냥 탭을 연다 — 주소 이동은 막히지 않는다.
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type');
+    res.setHeader('Access-Control-Max-Age', '600');
+    if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+
+    // 살아 있느냐만 묻는 자리. 목록을 통째로 읽는 /api/items 로 확인하면
+    // 설정 화면을 열 때마다 skillFX 폴더 62개를 훑게 된다.
+    if (url.pathname === '/api/ping') return json(res, 200, { ok: true, port: server.__port });
+
     if (url.pathname === '/') return send(res, 200, 'text/html; charset=utf-8', PAGE);
 
     // 브라우저가 알아서 찾는다. 없다고 404 를 내면 콘솔에 빨간 줄이 남아
@@ -619,6 +636,22 @@ async function boot(){
   items.forEach(it=>{const d=el('div','it');d.dataset.id=it.id;
     d.innerHTML='<span>'+it.dir.replace(/^\\d+-/,'')+'</span><small>'+it.kind+'</small>'+(it.done?'<span class="done">●</span>':'');
     d.onclick=()=>load(it);L.appendChild(d)});
+
+  // SkoolClass 설정의 「FX 편집기」 단추가 ?dir=25-pikachu&kind=attack 로 부른다.
+  // 62개 목록에서 눈으로 찾게 하면 단추를 만든 의미가 없다.
+  const q=new URLSearchParams(location.search);
+  if(q.get('dir')){
+    const want=q.get('dir')+' '+(q.get('kind')||'attack');
+    const hit=items.find(it=>it.id===want);
+    if(hit){
+      load(hit);
+      const node=[...L.children].find(n=>n.dataset.id===want);
+      if(node)node.scrollIntoView({block:'center'});
+    }else{
+      // 조용히 첫 항목을 열면 원장님은 엉뚱한 종을 고친 줄도 모른다.
+      alert('그 항목이 없습니다: '+want+'\\n아직 굽지 않았거나 폴더 이름이 다릅니다.');
+    }
+  }
 }
 async function load(it){
   cur=it;seq=[];edits={};openEd=null;

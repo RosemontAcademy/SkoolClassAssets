@@ -26,7 +26,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, spawnSync } from 'child_process';
 import { PNG } from 'pngjs';
-import { readFrames, encodeGif, applyEdits, fillRatio, paletteOf, listItems, sourcesFor, origPath, nextSaveSlot, savePath } from './lib/fxgif.mjs';
+import { readFrames, encodeGif, applyEdits, fillRatio, paletteOf, listItems, sourcesFor, origPath, nextSaveSlot, savePath, compositeInto } from './lib/fxgif.mjs';
 
 // 경로는 전부 이 파일 위치 기준이다. 이동식 SSD라 드라이브 문자가 바뀌고,
 // 어느 폴더에서 실행하든 같게 동작해야 한다.
@@ -117,13 +117,28 @@ function save(body) {
 
   const picked = [];
   let w = 0, h = 0;
-  for (const step of seq) {
-    const got = framesOf(dir, kind, step.src);
-    if (!got || !got.frames[step.i]) throw new Error(`${step.src}${step.i} 낱장을 못 찾았습니다`);
+
+  // 한 칸은 바닥 낱장 하나와, 그 위에 얹은 층들(over)로 이뤄진다.
+  // over 가 없으면 예전 조리법과 똑같은 뜻이라 옛 파일이 그대로 읽힌다.
+  const frameOf = (d, k, srcId, i, what) => {
+    const got = framesOf(d, k, srcId);
+    if (!got || !got.frames[i]) throw new Error(`${what} 낱장을 못 찾았습니다 (${d} ${k} ${srcId}·${i})`);
     if (!w) { w = got.w; h = got.h; }
-    if (got.w !== w || got.h !== h) throw new Error('캔버스 크기가 서로 다른 낱장은 못 섞습니다');
-    const px = new Uint8Array(got.frames[step.i]);
+    if (got.w !== w || got.h !== h)
+      throw new Error(`캔버스 크기가 다릅니다 — ${d} ${k} 는 ${got.w}×${got.h}, 이 종은 ${w}×${h}`);
+    return got.frames[i];
+  };
+
+  for (const step of seq) {
+    const px = new Uint8Array(frameOf(dir, kind, step.src, step.i, '바닥'));
     if (step.erase && step.erase.length) applyEdits(px, w, h, step.erase);
+
+    for (const L of step.over || []) {
+      const lay = new Uint8Array(frameOf(L.dir || dir, L.kind || kind, L.src, L.i, '얹은 층'));
+      if (L.erase && L.erase.length) applyEdits(lay, w, h, L.erase);
+      compositeInto(px, lay, w, h, L.dx || 0, L.dy || 0, L.blend || 'normal',
+        L.op === undefined ? 1 : L.op);
+    }
     picked.push(px);
   }
 
@@ -520,6 +535,34 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .ops button{padding:0 4px;font-size:11px;line-height:1.5;border-radius:5px}
   .ops .x{color:var(--drop)}
   .mark{flex:0 0 auto;width:4px;align-self:stretch;border-radius:2px;background:var(--accent)}
+
+  /* ── 층 ── */
+  .slot .lay{position:absolute;top:3px;left:3px;font-size:9px;font-weight:800;letter-spacing:.03em;
+    padding:1px 5px;border-radius:5px;background:var(--accent);color:#0A0B0F}
+  .slot.drop{border-color:var(--drop);box-shadow:0 0 0 3px color-mix(in srgb,var(--drop) 45%,transparent)}
+  .layers{border:2px solid var(--accent);border-radius:12px;padding:10px;margin:8px 0;background:var(--cell)}
+  .layers .lhead{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px}
+  .layers .lhead .cap{margin:0;text-align:left}
+  .layers .lhead button{margin-left:auto}
+  .lrows{display:flex;flex-direction:column;gap:6px}
+  .lrow{display:flex;align-items:center;gap:8px;padding:5px;border-radius:8px;
+    border:1px solid var(--line);background:var(--surface)}
+  .lrow.base{border-style:dashed;opacity:.85}
+  .lrow img{width:44px;height:44px;object-fit:contain;image-rendering:pixelated;border-radius:5px;
+    background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
+    linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);
+    background-size:10px 10px;background-position:0 0,5px 5px}
+  .lname{flex:1;min-width:90px;font-size:12px;font-family:ui-monospace,Consolas,monospace}
+  .lrow select{font-size:11px;padding:2px 4px;border-radius:6px}
+  .lrow input[type=range]{width:82px}
+  .nudge{display:flex;align-items:center;gap:2px}
+  .nudge button{padding:0 5px;font-size:11px;line-height:1.6;border-radius:5px}
+  .nudge .cap{margin:0;min-width:44px;text-align:left;font-family:ui-monospace,Consolas,monospace}
+  .lrow .x{color:var(--drop);padding:0 6px;border-radius:5px}
+  .row.pick{align-items:center;gap:8px;flex-wrap:wrap}
+  .row.pick .cap{margin:0;flex-basis:100%;text-align:left}
+  .row.foreign{opacity:.95}
+  .row.foreign .fr{border-style:dotted}
   body[data-bg=dark] .stage,body[data-bg=dark] .fr img,body[data-bg=dark] .slot img,body[data-bg=dark] .cw{background-image:none;background-color:#0A0B0F}
   body[data-bg=light] .stage,body[data-bg=light] .fr img,body[data-bg=light] .slot img,body[data-bg=light] .cw{background-image:none;background-color:#fff}
   body[data-bg=grey] .stage,body[data-bg=grey] .fr img,body[data-bg=grey] .slot img,body[data-bg=grey] .cw{background-image:none;background-color:#8A8F9A}
@@ -622,6 +665,62 @@ const rawURL=(src,i)=>'/frame.png?dir='+encodeURIComponent(cur.dir)+'&kind='+cur
 // 썸네일·조립 미리보기·게임 화면에 안 보이고, 저장한 뒤에야 나타난다.
 const editedCache={};
 const furl=(src,i)=>editedCache[K(src,i)]||rawURL(src,i);
+
+// ── 층 ──────────────────────────────────────────────────────────────────────
+// 한 칸은 바닥 낱장 하나와 그 위에 얹은 층들(over)로 이뤄진다.
+// over 가 없으면 예전과 똑같이 낱장 하나짜리다 — 옛 조리법이 그대로 읽힌다.
+const BLENDS=[['normal','보통'],['screen','밝게'],['add','더하기']];
+const CANVAS_OP={normal:'source-over',screen:'screen',add:'lighter'};
+
+// 다른 종에서 가져온 층은 손질을 안 붙인다. 손질 열쇠가 종을 안 담고 있어서
+// 'b1#2' 가 종끼리 부딪친다. 얹기만 하면 되는 자리라 이게 안전하다.
+const isForeign=L=>!!((L.dir&&L.dir!==cur.dir)||(L.kind&&L.kind!==cur.kind));
+const layURL=L=>isForeign(L)
+  ? '/frame.png?dir='+encodeURIComponent(L.dir)+'&kind='+L.kind+'&src='+L.src+'&i='+L.i
+  : furl(L.src,L.i);
+const layName=L=>(isForeign(L)?(L.dir.replace(/^\\d+-/,'')+'·'):'')+shortSrc(L.src)+'·'+L.i;
+
+// 만들어 둔 합성본을 다시 쓰기 위한 이름표. 층 하나라도 바뀌면 달라져야 한다.
+const slotSig=s=>JSON.stringify([s.src,s.i,nEdits(s.src,s.i),
+  (s.over||[]).map(L=>[L.dir||'',L.kind||'',L.src,L.i,L.dx|0,L.dy|0,L.blend||'normal',
+    L.op===undefined?1:L.op,isForeign(L)?0:nEdits(L.src,L.i)])]);
+const compCache={};
+const nLayers=s=>1+((s.over&&s.over.length)||0);
+const slotURL=s=>(s.over&&s.over.length)?(compCache[slotSig(s)]||furl(s.src,s.i)):furl(s.src,s.i);
+
+function loadImgs(urls,done){
+  const out=[];let left=urls.length;
+  if(!left){done(out);return}
+  urls.forEach((u,k)=>{const g=new Image();
+    g.onload=()=>{out[k]=g;if(!--left)done(out)};
+    g.onerror=()=>{out[k]=null;if(!--left)done(out)};
+    g.src=u});
+}
+function buildComposite(s,done){
+  const key=slotSig(s);
+  if(compCache[key]){done();return}
+  loadImgs([furl(s.src,s.i),...s.over.map(layURL)],imgs=>{
+    const base=imgs[0];
+    if(!base){done();return}
+    const c=document.createElement('canvas');c.width=base.width;c.height=base.height;
+    const x=c.getContext('2d');x.drawImage(base,0,0);
+    s.over.forEach((L,k)=>{
+      const g=imgs[k+1];if(!g)return;
+      x.globalCompositeOperation=CANVAS_OP[L.blend||'normal']||'source-over';
+      x.globalAlpha=L.op===undefined?1:L.op;
+      x.drawImage(g,L.dx|0,L.dy|0);
+    });
+    x.globalCompositeOperation='source-over';x.globalAlpha=1;
+    compCache[key]=c.toDataURL('image/png');done();
+  });
+}
+/** 아직 안 만든 합성본이 있으면 만들고 나서 부른다. 없으면 바로 부른다. */
+function ensureComposites(done){
+  const need=seq.filter(s=>s.over&&s.over.length&&!compCache[slotSig(s)]);
+  if(!need.length){done();return}
+  let left=need.length;
+  need.forEach(s=>buildComposite(s,()=>{if(!--left)done()}));
+}
 function buildEdited(src,i,done){
   const k=K(src,i), st=edits[k];
   if(!st||!st.length){delete editedCache[k];done&&done();return}
@@ -678,12 +777,13 @@ async function boot(){
   }
 }
 async function load(it){
-  cur=it;seq=[];edits={};openEd=null;
+  cur=it;seq=[];edits={};openEd=null;selSlot=null;extras=[];
+  Object.keys(compCache).forEach(k=>delete compCache[k]);
   document.querySelectorAll('.it').forEach(n=>n.classList.toggle('on',n.dataset.id===it.id));
   meta={};
   for(const s of it.sources) meta[s.id]=await (await fetch('/api/frames?dir='+encodeURIComponent(it.dir)+'&kind='+it.kind+'&src='+s.id)).json();
   const r=await (await fetch('/api/recipe?dir='+encodeURIComponent(it.dir)+'&kind='+it.kind)).json();
-  if(r&&r.steps){seq=r.steps.map(s=>({src:s.src,i:s.i}));r.steps.forEach(s=>{if(s.erase&&s.erase.length)edits[K(s.src,s.i)]=s.erase})}
+  if(r&&r.steps){seq=r.steps.map(s=>({src:s.src,i:s.i,over:(s.over||[]).map(L=>Object.assign({},L))}));r.steps.forEach(s=>{if(s.erase&&s.erase.length)edits[K(s.src,s.i)]=s.erase})}
   else seq=meta.old.fills.map((_,i)=>({src:'old',i}));
   undoStack=[];                                  // 다른 종의 순서로 되돌아가면 안 된다
   Object.keys(editedCache).forEach(k=>delete editedCache[k]);
@@ -696,6 +796,11 @@ async function load(it){
   if(left<=0)render();
 }
 function render(){
+  // 층을 얹은 칸은 합성본이 있어야 그릴 수 있다. 없으면 만들고 다시 들어온다 —
+  // 만들어 두면 두 번째에는 이 자리를 그냥 지나간다.
+  if(seq.some(s=>s.over&&s.over.length&&!compCache[slotSig(s)])){
+    ensureComposites(()=>render());return;
+  }
   const b=$('#bar');b.innerHTML='';
   const t=el('span','lbl');t.textContent=cur.dir+' · '+cur.kind+' · '+cur.canvas;b.appendChild(t);
   cur.sources.forEach(s=>{const x=el('button');x.textContent=s.label+' 전부';
@@ -729,7 +834,10 @@ function render(){
 
   const W=$('#work');W.innerHTML='';
   cur.sources.forEach(s=>W.appendChild(strip(s)));
+  extras.forEach(x=>W.appendChild(extraStrip(x)));
+  W.appendChild(foreignPicker());
   W.appendChild(seqRow());
+  if(selSlot!==null&&seq[selSlot]) W.appendChild(layersPanel(selSlot));
   const D=delays();const loop=D.reduce((a,b)=>a+b,0);
   const info=el('div','msg');
   info.innerHTML=seq.length
@@ -781,21 +889,42 @@ function seqRow(){
   seq.forEach((s,n)=>{
     const b=el('div','slot'+(s.src==='old'?' old':'')+(nEdits(s.src,s.i)?' edited':'')
       +(openEd&&openEd.src===s.src&&openEd.i===s.i?' sel':''));
-    b.draggable=true;b.dataset.n=n;b.title='눌러서 이 낱장 편집';
-    const img=el('img');img.src=furl(s.src,s.i);b.appendChild(img);
+    b.draggable=true;b.dataset.n=n;b.title='눌러서 이 낱장 편집 · 낱장을 여기로 끌어다 놓으면 위에 얹습니다';
+    const img=el('img');img.src=slotURL(s);b.appendChild(img);
     const m=el('div','m');m.textContent=shortSrc(s.src)+'·'+s.i;b.appendChild(m);
+    if(s.over&&s.over.length){
+      const lg=el('div','lay');lg.textContent='층 '+nLayers(s);
+      lg.title=[shortSrc(s.src)+'·'+s.i+' (바닥)',...s.over.map(layName)].join(' → ');
+      b.appendChild(lg);
+    }
+    // 낱장을 칸 «위로» 끌어다 놓으면 새 칸이 아니라 그 칸의 층이 된다.
+    b.addEventListener('dragover',e=>{
+      if(!drag||drag.kind==='move')return;
+      e.preventDefault();e.stopPropagation();clearMark();b.classList.add('drop')});
+    b.addEventListener('dragleave',()=>b.classList.remove('drop'));
+    b.addEventListener('drop',e=>{
+      if(!drag||drag.kind==='move')return;
+      e.preventDefault();e.stopPropagation();b.classList.remove('drop');
+      push();
+      s.over=s.over||[];
+      s.over.push({dir:drag.dir||undefined,kind:drag.dirKind||undefined,src:drag.src,i:drag.i,
+                   dx:0,dy:0,blend:'normal',op:1});
+      selSlot=n;drag=null;render()});
     // 담아 놓고 보다가 손보고 싶어지는 게 자연스러운 순서다. 재료 줄로 되돌아가
     // 같은 낱장을 다시 찾게 만들면 안 된다.
     b.onclick=()=>{openEd={src:s.src,i:s.i};render();
       setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
     const ops=el('div','ops');
-    [['✎','edit'],['◀',-1],['▶',1],['×',0]].forEach(([t,d])=>{
+    [['✎','edit'],['層','lay'],['◀',-1],['▶',1],['×',0]].forEach(([t,d])=>{
       const x=el('button',d===0?'x':'');x.textContent=t;
+      if(d==='lay')x.title='이 칸의 층 다루기';
       x.onclick=e=>{e.stopPropagation();
         if(d==='edit'){b.onclick();return}
+        if(d==='lay'){selSlot=(selSlot===n?null:n);render();return}
         push();
         if(d===0)seq.splice(n,1);
         else{const j=n+d;if(j<0||j>=seq.length)return;[seq[n],seq[j]]=[seq[j],seq[n]]}
+        if(selSlot!==null&&selSlot>=seq.length)selSlot=null;
         render()};
       ops.appendChild(x)});
     b.appendChild(ops);
@@ -804,14 +933,147 @@ function seqRow(){
     sp.appendChild(b);
   });
   sp.addEventListener('dragover',e=>{if(!drag)return;e.preventDefault();markAt(sp,e.clientX)});
-  sp.addEventListener('drop',e=>{if(!drag)return;e.preventDefault();push();
+  sp.addEventListener('drop',e=>{if(!drag)return;e.preventDefault();
+    // 다른 종 낱장은 바닥이 될 수 없다 — 캔버스 기준이 흔들린다. 칸 «위» 로 놓아야 한다.
+    if(drag.kind==='layer'){clearMark();drag=null;
+      const m=el('div','msg err');m.textContent='다른 종 낱장은 칸 사이가 아니라 칸 «위» 로 끌어다 놓아 층으로 얹어 주세요.';
+      $('#work').appendChild(m);setTimeout(()=>m.remove(),4000);return}
+    push();
     const at=markIndex(sp);
     if(drag.kind==='add')seq.splice(at,0,{src:drag.src,i:drag.i});
     else{const [m]=seq.splice(drag.n,1);seq.splice(at>drag.n?at-1:at,0,m)}
     clearMark();drag=null;render()});
   row.appendChild(sp);return row;
 }
-let drag=null,mark=null;
+// ── 다른 종 재료 ────────────────────────────────────────────────────────────
+// 「스프라이트 여러 개를 섞는다」 는 종을 넘나든다는 뜻이기도 하다. 다른 종의
+// 낱장을 재료 줄로 불러와 두면, 얹는 방법은 같은 종 재료와 똑같아진다.
+// 손질(지우개·연필)은 안 붙인다 — 손질 열쇠가 종을 안 담아서 부딪친다.
+let extras=[];
+function foreignPicker(){
+  const row=el('div','row pick');
+  const t=el('span','lbl');t.textContent='다른 종 불러오기';row.appendChild(t);
+  const sel=el('select');
+  const none=el('option');none.value='';none.textContent='— 고르세요 —';sel.appendChild(none);
+  items.filter(it=>it.id!==cur.id&&it.w===cur.w&&it.h===cur.h).forEach(it=>{
+    const o=el('option');o.value=it.id;
+    o.textContent=it.dir.replace(/^\\d+-/,'')+' · '+(it.kind==='attack'?'공격':'맞는 쪽');
+    sel.appendChild(o)});
+  row.appendChild(sel);
+  const add=el('button');add.textContent='재료 줄에 더하기';
+  add.onclick=async()=>{
+    const it=items.find(x=>x.id===sel.value);if(!it)return;
+    add.disabled=true;add.textContent='읽는 중…';
+    for(const s of it.sources){
+      const key=it.dir+'|'+it.kind+'|'+s.id;
+      if(extras.some(x=>x.key===key))continue;
+      const m=await (await fetch('/api/frames?dir='+encodeURIComponent(it.dir)+'&kind='+it.kind+'&src='+s.id)).json();
+      extras.push({key,dir:it.dir,kind:it.kind,src:s.id,label:it.dir.replace(/^\\d+-/,'')+' '+
+        (it.kind==='attack'?'공격':'맞는 쪽')+' · '+s.label,fills:m.fills});
+    }
+    add.disabled=false;add.textContent='재료 줄에 더하기';render()};
+  row.appendChild(add);
+  if(extras.length){
+    const cl=el('button');cl.textContent='불러온 것 치우기';
+    cl.onclick=()=>{extras=[];render()};row.appendChild(cl);
+  }
+  const cap=el('div','cap');
+  cap.textContent='캔버스 크기가 같은 종만 나옵니다 — 크기가 다르면 못 겹칩니다.';
+  row.appendChild(cap);
+  return row;
+}
+function extraStrip(x){
+  const row=el('div','row foreign');
+  const box=el('div');const c=el('div','cap');c.textContent=x.label;box.appendChild(c);row.appendChild(box);
+  const sp=el('div','strip');
+  x.fills.forEach((f,i)=>{
+    const b=el('div','fr');
+    const img=el('img');img.src='/frame.png?dir='+encodeURIComponent(x.dir)+'&kind='+x.kind+'&src='+x.src+'&i='+i;
+    b.appendChild(img);
+    const m=el('div','m');m.textContent=i+' · '+f+'%';b.appendChild(m);
+    b.draggable=true;b.title='칸 위로 끌어다 놓으면 층으로 얹힙니다';
+    b.addEventListener('dragstart',e=>{drag={kind:'layer',dir:x.dir,dirKind:x.kind,src:x.src,i};
+      b.classList.add('dragging');e.dataTransfer.effectAllowed='copy'});
+    b.addEventListener('dragend',()=>{b.classList.remove('dragging');clearMark();drag=null});
+    sp.appendChild(b);
+  });
+  row.appendChild(sp);return row;
+}
+
+/**
+ * 한 칸의 층 목록. 아래가 바닥, 위로 갈수록 나중에 얹힌다 —
+ * 목록도 그 순서 그대로 위가 위다.
+ */
+function layersPanel(n){
+  const s=seq[n];
+  const box=el('div','layers');
+  const h=el('div','lhead');
+  h.innerHTML='<b>'+(n+1)+'번째 칸</b> 의 층 '+nLayers(s)+'개 <span class="cap">— 위에 있는 것이 위에 그려집니다</span>';
+  const cl=el('button');cl.textContent='닫기';cl.onclick=()=>{selSlot=null;render()};h.appendChild(cl);
+  box.appendChild(h);
+
+  const rows=el('div','lrows');
+  // 위에 얹은 것부터 보여 준다. 화면 순서와 그려지는 순서를 뒤집으면 헷갈린다.
+  (s.over||[]).slice().reverse().forEach((L,rev)=>{
+    const k=s.over.length-1-rev;
+    const r=el('div','lrow');
+    const im=el('img');im.src=layURL(L);r.appendChild(im);
+    const nm=el('div','lname');nm.textContent=layName(L);r.appendChild(nm);
+
+    const bl=el('select');bl.title='합성 방식';
+    BLENDS.forEach(([v,t])=>{const o=el('option');o.value=v;o.textContent=t;
+      if((L.blend||'normal')===v)o.selected=true;bl.appendChild(o)});
+    bl.onchange=()=>{push();L.blend=bl.value;render()};r.appendChild(bl);
+
+    const op=el('input');op.type='range';op.min='0';op.max='100';op.step='5';
+    op.value=String(Math.round((L.op===undefined?1:L.op)*100));
+    op.title='투명도';
+    op.onchange=()=>{push();L.op=(+op.value)/100;render()};r.appendChild(op);
+
+    const nudge=el('div','nudge');
+    [['←',-1,0],['→',1,0],['↑',0,-1],['↓',0,1]].forEach(([t,ax,ay])=>{
+      const x=el('button');x.textContent=t;x.title='자리 옮기기 (Shift 누르면 8칸)';
+      x.onclick=e=>{push();const m=e.shiftKey?8:1;
+        L.dx=(L.dx|0)+ax*m;L.dy=(L.dy|0)+ay*m;render()};
+      nudge.appendChild(x)});
+    const pos=el('span','cap');pos.textContent=(L.dx|0)+','+(L.dy|0);nudge.appendChild(pos);
+    r.appendChild(nudge);
+
+    const mv=el('div','nudge');
+    [['▲',1],['▼',-1]].forEach(([t,d])=>{
+      const x=el('button');x.textContent=t;x.title=d>0?'위로':'아래로';
+      x.onclick=()=>{const j=k+d;
+        if(j<0){ // 바닥보다 더 아래로 — 바닥과 자리를 바꾼다
+          push();const b={src:s.src,i:s.i,dx:0,dy:0,blend:'normal',op:1};
+          s.src=L.src;s.i=L.i;
+          if(L.dir||L.kind){/* 다른 종은 바닥이 될 수 없다 — 캔버스 기준이 흔들린다 */
+            alert('다른 종에서 가져온 층은 바닥으로 못 내립니다.');return}
+          s.over[k]=b;render();return}
+        if(j>=s.over.length)return;
+        push();[s.over[k],s.over[j]]=[s.over[j],s.over[k]];render()};
+      mv.appendChild(x)});
+    r.appendChild(mv);
+
+    const rm=el('button','x');rm.textContent='×';rm.title='이 층 빼기';
+    rm.onclick=()=>{push();s.over.splice(k,1);if(!s.over.length)delete s.over;render()};
+    r.appendChild(rm);
+    rows.appendChild(r);
+  });
+
+  const base=el('div','lrow base');
+  const bim=el('img');bim.src=furl(s.src,s.i);base.appendChild(bim);
+  const bnm=el('div','lname');bnm.textContent=shortSrc(s.src)+'·'+s.i;base.appendChild(bnm);
+  const bt=el('span','cap');bt.textContent='바닥';base.appendChild(bt);
+  rows.appendChild(base);
+  box.appendChild(rows);
+
+  const tip=el('div','cap');
+  tip.textContent='재료 줄의 낱장을 이 칸 위로 끌어다 놓으면 층으로 얹힙니다. 다른 종 재료는 위 「다른 종 불러오기」 로 가져오세요.';
+  box.appendChild(tip);
+  return box;
+}
+
+let drag=null,mark=null,selSlot=null;
 function clearMark(){if(mark&&mark.parentNode)mark.remove();mark=null}
 function markAt(box,x){
   if(!mark){mark=el('div','mark')}
@@ -884,13 +1146,16 @@ function play(){
   const im=$('#seqimg');if(!im||!seq.length)return;
   const gm=$('#gamefx');
   const D=delays();let k=0;
-  const step=()=>{const u=furl(seq[k].src,seq[k].i);
+  const step=()=>{const u=slotURL(seq[k]);
     im.src=u;if(gm)gm.src=u;
     const d=D[k];k=(k+1)%seq.length;playT=setTimeout(step,d)};
   step();
 }
 async function save(){
-  const steps=seq.map(s=>({src:s.src,i:s.i,erase:edits[K(s.src,s.i)]||[]}));
+  const steps=seq.map(s=>({src:s.src,i:s.i,erase:edits[K(s.src,s.i)]||[],
+    over:(s.over||[]).map(L=>({dir:L.dir,kind:L.kind,src:L.src,i:L.i,dx:L.dx|0,dy:L.dy|0,
+      blend:L.blend||'normal',op:L.op===undefined?1:L.op,
+      erase:isForeign(L)?[]:(edits[K(L.src,L.i)]||[])}))}));
   const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({dir:cur.dir,kind:cur.kind,seq:steps,fitMs:fit,leadShort})});
   const j=await r.json();

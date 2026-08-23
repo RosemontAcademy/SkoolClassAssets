@@ -141,6 +141,44 @@ export function applyEdits(px, w, h, edits) {
   }
 }
 
+/**
+ * 층 하나를 아래 그림 위에 얹는다.
+ *
+ * 게임의 선생님 화면은 FX 를 screen 으로 합성해서 검은 곳이 비쳐 보인다.
+ * 편집기에서 normal 로만 겹쳐 보면 게임에서 어떻게 보일지 알 수 없으므로
+ * 같은 방식들을 여기서도 그대로 낸다.
+ *
+ *   normal  위가 아래를 가린다
+ *   screen  밝은 쪽이 남는다 — 빛·번개·불꽃을 겹칠 때
+ *   add     빛을 더한다. 겹칠수록 하얗게 탄다
+ *
+ * dx·dy 는 얹는 자리. 캔버스 밖으로 나간 부분은 버린다.
+ */
+export function compositeInto(dst, src, w, h, dx = 0, dy = 0, blend = 'normal', opacity = 1) {
+  const ox = Math.round(dx), oy = Math.round(dy);
+  for (let y = 0; y < h; y++) {
+    const ty = y + oy;
+    if (ty < 0 || ty >= h) continue;
+    for (let x = 0; x < w; x++) {
+      const tx = x + ox;
+      if (tx < 0 || tx >= w) continue;
+      const s = (y * w + x) * 4, d = (ty * w + tx) * 4;
+      const a = (src[s + 3] / 255) * opacity;
+      if (a <= 0) continue;
+      for (let c = 0; c < 3; c++) {
+        const sv = src[s + c], dv = dst[d + c];
+        let v;
+        if (blend === 'screen') v = 255 - ((255 - dv) * (255 - sv)) / 255;
+        else if (blend === 'add') v = Math.min(255, dv + sv);
+        else v = sv;
+        dst[d + c] = Math.round(dv + (v - dv) * a);
+      }
+      // 알파는 어느 방식이든 쌓인다 — 겹친 자리가 비어 보이면 안 된다
+      dst[d + 3] = Math.round(255 - (255 - dst[d + 3]) * (1 - a));
+    }
+  }
+}
+
 /** 낱장에 실제로 쓰인 색을 많이 쓰인 순서로. 픽셀아트라 색이 몇 개 안 된다. */
 export function paletteOf(px, w, h, max = 48) {
   const freq = new Map();

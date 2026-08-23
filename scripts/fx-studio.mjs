@@ -659,7 +659,7 @@ async function loadCalib(force){
 const PANEL_H=Math.min(540,Math.max(300,Math.round(CANVAS[1]*0.56)));
 const SCENE_H=CANVAS[1]-PANEL_H;
 let items=[],cur=null,meta={},seq=[],edits={},fit=3000,zoom=1,playT=null,openEd=null;
-let leadShort=true,undoStack=[],blend='screen',showBg=true,showSlots=false,pinGame=true;
+let leadShort=true,undoStack=[],redoStack=[],blend='screen',showBg=true,showSlots=false,pinGame=true;
 const rawURL=(src,i)=>'/frame.png?dir='+encodeURIComponent(cur.dir)+'&kind='+cur.kind+'&src='+src+'&i='+i;
 // 손질한 낱장은 서버가 아니라 여기서 만든 그림을 쓴다. 안 그러면 지우거나 칠한 것이
 // 썸네일·조립 미리보기·게임 화면에 안 보이고, 저장한 뒤에야 나타난다.
@@ -761,6 +761,16 @@ const shortSrc=id=>{
   return id;
 };
 const K=(src,i)=>src+'#'+i;
+// 열쇠를 도로 가르는 자리. 정규식을 쓰면 이 화면이 통짜 문자열이라 역슬래시가
+// 먹혀 /^(.+)#(d+)$/ 가 되고, 아무것도 안 걸리면서 조용히 지나간다 — 실제로
+// 그래서 조리법을 열어도 손질한 그림이 안 만들어졌다. 글자로 가르면 그럴 일이 없다.
+function splitKey(k){
+  const at=k.lastIndexOf('#');
+  if(at<1)return null;
+  const i=Number(k.slice(at+1));
+  if(!Number.isInteger(i))return null;
+  return [k.slice(0,at),i];
+}
 const nEdits=(src,i)=>(edits[K(src,i)]||[]).length;
 
 async function boot(){
@@ -796,14 +806,14 @@ async function load(it){
   const r=await (await fetch('/api/recipe?dir='+encodeURIComponent(it.dir)+'&kind='+it.kind)).json();
   if(r&&r.steps){seq=r.steps.map(s=>({src:s.src,i:s.i,over:(s.over||[]).map(L=>Object.assign({},L))}));r.steps.forEach(s=>{if(s.erase&&s.erase.length)edits[K(s.src,s.i)]=s.erase})}
   else seq=meta.old.fills.map((_,i)=>({src:'old',i}));
-  undoStack=[];                                  // 다른 종의 순서로 되돌아가면 안 된다
+  undoStack=[];redoStack=[];                     // 다른 종의 순서로 되돌아가면 안 된다
   Object.keys(editedCache).forEach(k=>delete editedCache[k]);
   const ks=Object.keys(edits);
   let left=ks.length;
   if(!left){render();return}
-  ks.forEach(k=>{const m=/^(.+)#(\d+)$/.exec(k);
+  ks.forEach(k=>{const m=splitKey(k);
     if(!m){left--;return}
-    buildEdited(m[1],+m[2],()=>{if(--left<=0)render()})});
+    buildEdited(m[0],m[1],()=>{if(--left<=0)render()})});
   if(left<=0)render();
 }
 function render(){
@@ -833,7 +843,11 @@ function render(){
   ls.title='0번 장은 이펙트가 없는 맨 스프라이트라 짧게 주는 게 자연스럽습니다';
   ls.onclick=()=>{leadShort=!leadShort;render()};b.appendChild(ls);
   const ud=el('button');ud.textContent='되돌리기';ud.disabled=!undoStack.length;
-  ud.onclick=()=>{const p=undoStack.pop();if(p){seq=JSON.parse(p);render()}};b.appendChild(ud);
+  ud.title='Ctrl+Z — 붓질까지 포함해 마지막 한 가지를 되돌립니다';
+  ud.onclick=undo;b.appendChild(ud);
+  const rd2=el('button');rd2.textContent='다시하기';rd2.disabled=!redoStack.length;
+  rd2.title='Ctrl+Shift+Z — 되돌린 것을 도로 합니다';
+  rd2.onclick=redo;b.appendChild(rd2);
   const sv=el('button','primary');sv.textContent='저장';sv.disabled=!seq.length;sv.onclick=save;b.appendChild(sv);
   const pin=el('button');pin.id='pinbtn';pin.textContent='게임까지 반영';
   pin.setAttribute('aria-pressed',String(pinGame));
@@ -868,7 +882,39 @@ function delays(){
     return [lead,...Array(seq.length-1).fill(r10((fit-lead)/(seq.length-1)))]}
   return Array(seq.length).fill(r10(fit/seq.length));
 }
-function push(){undoStack.push(JSON.stringify(seq));if(undoStack.length>40)undoStack.shift()}
+// ── 되돌리기 ────────────────────────────────────────────────────────────────
+// 역사는 **하나**다. 캔바가 그렇듯 붓질이든 순서 바꾸기든 층 얹기든 같은 줄에
+// 쌓이고 Ctrl+Z 한 번이 마지막 한 가지를 되돌린다.
+// 예전에는 두 겹이었다 — 툴바 되돌리기는 칸·층만, 편집기 안의 되돌리기는 붓질만.
+// 그래서 «되돌렸는데 안 돌아간다» 가 생겼다. 어느 되돌리기인지 손이 알 수가 없다.
+//
+// 되돌릴 것에 손질(edits)과 편집 중인 붓질(strokes)까지 담는다. 붓질을 빼면
+// 지우개로 그은 것이 되돌리기 대상 밖에 남는다.
+const snapshot=()=>JSON.stringify({seq,edits,openEd,strokes});
+function push(){
+  undoStack.push(snapshot());
+  if(undoStack.length>60)undoStack.shift();
+  redoStack=[];                     // 새로 뭔가 했으면 앞으로 가던 길은 사라진다
+}
+function applySnap(js){
+  const o=JSON.parse(js);
+  seq=o.seq||[];edits=o.edits||{};openEd=o.openEd||null;
+  Object.keys(editedCache).forEach(k=>delete editedCache[k]);
+  Object.keys(compCache).forEach(k=>delete compCache[k]);
+  // 편집기를 열어 둔 채로 되돌렸으면, 그때 긋고 있던 붓질까지 그대로 되살린다.
+  // mountedKey 를 맞춰 둬야 화면이 붙으면서 저장본으로 덮어쓰지 않는다.
+  strokes=(o.strokes||[]).slice();
+  mountedKey=openEd?K(openEd.src,openEd.i):null;
+  const ks=Object.keys(edits);
+  let left=ks.length;
+  if(!left){render();return}
+  ks.forEach(k=>{const m=splitKey(k);
+    if(!m){left--;return}
+    buildEdited(m[0],m[1],()=>{if(--left<=0)render()})});
+  if(left<=0)render();
+}
+function undo(){if(!undoStack.length)return;redoStack.push(snapshot());applySnap(undoStack.pop())}
+function redo(){if(!redoStack.length)return;undoStack.push(snapshot());applySnap(redoStack.pop())}
 const gap=()=>{const s=el('span');s.style.flex='1';return s};
 const lab=t=>{const s=el('span','lbl');s.textContent=t;return s};
 
@@ -1213,10 +1259,10 @@ addEventListener('keydown',e=>{
   const typing=/^(INPUT|TEXTAREA)$/.test((e.target||{}).tagName||'');
   if(!(e.ctrlKey||e.metaKey)||typing)return;
   const k=e.key.toLowerCase();
-  if(k==='z'){ e.preventDefault();
-    if(openEd&&ed){ document.getElementById('eu')?.click(); }   // 편집기 안이면 붓질 되돌리기
-    else { const p=undoStack.pop(); if(p){seq=JSON.parse(p);render()} }
-  }
+  // 어디에 있든 같은 역사를 되돌린다. 편집기 안이라고 다른 되돌리기가 도는 게
+  // 캔바를 쓰다 온 손에는 «안 돌아간다» 로 느껴진다.
+  if(k==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); }
+  if(k==='y'){ e.preventDefault(); redo(); }
   if(k==='s'){ e.preventDefault();
     // 낱장 편집 중이면 '이 낱장에 적용', 아니면 전체 저장. 손이 가는 곳이 다르다.
     if(openEd){ document.getElementById('eapply')?.click(); }
@@ -1287,21 +1333,17 @@ function editor(){
   };opts.appendChild(ob);
   const ub=el('button');ub.id='eu';ub.textContent='되돌리기';
   ub.onclick=()=>{
-    if(!strokes.length)return;
-    // 붓질 한 번은 점 수십 개로 남는다 — 이어진 것을 한 덩어리로 되돌린다.
-    // 예전엔 'c'/'p' 만 그렇게 처리하고 이동·페인트통·색바꾸기는 아예 안 지워졌다.
-    const drag=t=>t==='c'||t==='p'||t==='shift';
-    const last=strokes[strokes.length-1].t;
-    if(drag(last)){ while(strokes.length&&strokes[strokes.length-1].t===last)strokes.pop() }
-    else strokes.pop();
-    redraw();
+    // 편집기 안에서 눌러도 같은 역사를 되돌린다. 여기만 따로 돌면
+    // 툴바에서 되돌린 것과 어긋나서 어느 쪽이 진짜인지 알 수 없어진다.
+    undo();
   };
-  const rb=el('button');rb.textContent='처음으로';rb.onclick=()=>{strokes=[];redraw()};
+  const rb=el('button');rb.textContent='처음으로';rb.onclick=()=>{push();strokes=[];redraw()};
   opts.append(ub,rb);T.appendChild(opts);
 
   const ap=el('button','primary');ap.id='eapply';ap.textContent='이 낱장에 적용';
   ap.onclick=()=>{
     const k=K(openEd.src,openEd.i), src=openEd.src, i=openEd.i;
+    push();                              // 적용도 되돌릴 수 있어야 한다
     if(strokes.length)edits[k]=strokes.slice();else delete edits[k];
     openEd=null;mountedKey=null;
     buildEdited(src,i,()=>render());   // 손질한 그림을 만든 뒤에 화면을 그린다
@@ -1435,7 +1477,10 @@ function bindCanvas(cv){
     cv.setPointerCapture(e.pointerId);const p=pos(e);
     if(tool==='picker'){const c=ctxOf();const d=c.getImageData(Math.floor(p.x),Math.floor(p.y),1,1).data;
       color='#'+[d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,'0')).join('');
-      setColor(color);return}
+      setColor(color);return}   // 색만 집는 것은 그림을 안 바꾸니 역사에 안 남긴다
+    // 여기서부터는 그림이 바뀐다. **긋기 전에** 지금 모습을 역사에 남긴다 —
+    // 끌어 그은 한 번이 점 수십 개여도 되돌리기 한 번에 통째로 돌아가야 한다.
+    push();
     if(tool==='bucket'){strokes.push({t:'fill',x:rd(p.x),y:rd(p.y),color:hex2rgb(color),tol});redraw();return}
     if(tool==='swap'){const c=ctxOf();const d=c.getImageData(Math.floor(p.x),Math.floor(p.y),1,1).data;
       strokes.push({t:'swap',from:[d[0],d[1],d[2]],to:hex2rgb(color),tol});redraw();return}

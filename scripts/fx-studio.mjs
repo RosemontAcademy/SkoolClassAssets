@@ -516,14 +516,21 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .edmain{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
   .cw{border-radius:12px;padding:8px;background-color:var(--cell);position:relative;
     background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
-    linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:16px 16px;background-position:0 0,8px 8px}
+    linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:16px 16px;background-position:0 0,8px 8px;
+    overflow:auto;max-width:100%;
+    display:flex;align-items:safe center;justify-content:safe center}
+  /* 확대하면 캔버스가 칸보다 커진다 — 칸이 스스로 스크롤돼야 도구가 안 밀린다 */
+  .ed.full .edmain{flex:1;min-height:0;align-items:stretch}
+  .ed.full .cw{flex:1;max-height:calc(100vh - 150px)}
+  .ed.full .tools{max-height:calc(100vh - 150px);overflow-y:auto}
+  .cwrap{position:relative;width:max-content;height:max-content}
   #cv{image-rendering:pixelated;cursor:crosshair;touch-action:none;border-radius:4px;display:block}
   /* 앞 장은 파랗게 물들여 보여준다 — 안 그러면 "왜 겹쳐 보이지" 가 된다 */
-  #onion{position:absolute;left:8px;top:8px;pointer-events:none;image-rendering:pixelated;
+  #onion{position:absolute;left:0;top:0;pointer-events:none;image-rendering:pixelated;
     opacity:.32;border-radius:4px;filter:grayscale(1) sepia(1) hue-rotate(175deg) saturate(4)}
   .onionmark{position:absolute;right:12px;top:12px;font-size:10px;font-weight:800;color:#7aa7ff;
     background:rgba(0,0,0,.55);border-radius:5px;padding:1px 6px;pointer-events:none}
-  #grid{position:absolute;left:8px;top:8px;pointer-events:none;border-radius:4px}
+  #grid{position:absolute;left:0;top:0;pointer-events:none;border-radius:4px}
   .tools{display:flex;flex-direction:column;gap:8px;min-width:210px}
   .tgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
   .tgrid button{padding:7px 4px;font-size:12px}
@@ -846,9 +853,13 @@ function editor(){
   const wrap=el('div','ed'+(edFull?' full':''));
   const h=el('h2');h.innerHTML='낱장 편집 <span class="mono">'+(openEd.src==='old'?'지금':'새')+openEd.i+'</span>';
   const zl=el('span');zl.className='lbl';zl.style.marginLeft='auto';zl.textContent='확대';h.appendChild(zl);
-  [[0,'자동'],[2,'2배'],[4,'4배'],[6,'6배'],[8,'8배']].forEach(([v,n])=>{
-    const x=el('button');x.textContent=n;x.setAttribute('aria-pressed',String(edZoom===v));
-    x.onclick=()=>{edZoom=v;render()};h.appendChild(x)});
+  const zBtns=[];
+  [[0,'자동'],[2,'2배'],[4,'4배'],[8,'8배'],[12,'12배'],[16,'16배']].forEach(([v,n])=>{
+    const x=el('button');x.textContent=n;x.dataset.z=v;x.setAttribute('aria-pressed',String(edZoom===v));
+    x.onclick=()=>{setZoom(v||autoZoom());edZoom=v;
+      zBtns.forEach(t=>t.setAttribute('aria-pressed',String(+t.dataset.z===v)))};
+    zBtns.push(x);h.appendChild(x)});
+  const zl2=el('span');zl2.id='zlab';zl2.className='lbl';zl2.style.minWidth='34px';h.appendChild(zl2);
   const fs=el('button');fs.textContent=edFull?'창으로':'전체화면';fs.setAttribute('aria-pressed',String(edFull));
   fs.onclick=()=>{edFull=!edFull;render()};h.appendChild(fs);
   const cls=el('button','close');cls.textContent='닫기';cls.style.marginLeft='0';
@@ -857,8 +868,9 @@ function editor(){
 
   const main=el('div','edmain');
   const cw=el('div','cw');
+  const inner=el('div','cwrap');
   const on=el('canvas');on.id='onion';const gr=el('canvas');gr.id='grid';const cv=el('canvas');cv.id='cv';
-  cw.append(on,cv,gr);
+  inner.append(on,cv,gr);cw.appendChild(inner);
   if(onionOn&&openEd.i>0){const mk=el('div','onionmark');mk.textContent='앞 장 비침';cw.appendChild(mk)}
   main.appendChild(cw);
 
@@ -905,23 +917,39 @@ function editor(){
   ap.onclick=()=>{const k=K(openEd.src,openEd.i);if(strokes.length)edits[k]=strokes.slice();else delete edits[k];openEd=null;render()};
   T.appendChild(ap);
   const hint=el('div');hint.className='cap';hint.style.textAlign='left';
-  hint.innerHTML='손댄 자국은 좌표로 저장됩니다. 원본 gif 는 안 바뀝니다.<br><b>Ctrl+Z</b> 붓질 되돌리기 · <b>Ctrl+S</b> 이 낱장에 적용';
+  hint.innerHTML='손댄 자국은 좌표로 저장됩니다. 원본 gif 는 안 바뀝니다.<br>'
+    +'<b>휠</b> 확대·축소 (커서 지점 기준) · 커지면 칸 안에서 끌어 넘기기<br>'
+    +'<b>Ctrl+Z</b> 붓질 되돌리기 · <b>Ctrl+S</b> 이 낱장에 적용';
   T.appendChild(hint);
   main.appendChild(T);wrap.appendChild(main);
 
   setTimeout(()=>mount(cv,on,gr,pw),0);
   return wrap;
 }
+function autoZoom(){
+  if(!base)return 4;
+  const room=edFull?Math.min(innerWidth-380,innerHeight-170):460;
+  return Math.max(2,Math.min(16,Math.floor(room/base.w)));
+}
+/** 배율만 갈아끼운다 — render() 를 부르면 캔버스가 새로 붙어 그리던 게 끊긴다. */
+function setZoom(z){
+  if(!base)return;
+  z=Math.max(1,Math.min(32,Math.round(z)));
+  base.z=z;
+  ['cv','onion','grid'].forEach(id=>{const c=document.getElementById(id);
+    if(c){c.style.width=base.w*z+'px';c.style.height=base.h*z+'px'}});
+  const gr=document.getElementById('grid');if(gr)drawGrid(gr,z);
+  const lab=document.getElementById('zlab');if(lab)lab.textContent=z+'배';
+}
 function mount(cv,on,gr,pw){
   const img=new Image();
   img.onload=()=>{
-    // 자동일 때는 들어갈 만한 크기로, 전체화면이면 화면 높이에 맞춘다.
-    const room=edFull?Math.min(innerWidth-360,innerHeight-220):460;
-    const z=edZoom||Math.max(2,Math.min(10,Math.floor(room/img.width)));
-    base={img,z,w:img.width,h:img.height};
-    [cv,on,gr].forEach(c=>{c.width=img.width;c.height=img.height;c.style.width=img.width*z+'px';c.style.height=img.height*z+'px'});
+    base={img,z:1,w:img.width,h:img.height};
+    const z=edZoom||autoZoom();
+    [cv,on,gr].forEach(c=>{c.width=img.width;c.height=img.height});
+    setZoom(z);
     strokes=(edits[K(openEd.src,openEd.i)]||[]).slice();
-    redraw();drawGrid(gr,z);drawOnion(on);buildPal(pw);
+    redraw();drawOnion(on);buildPal(pw);
     bindCanvas(cv);
   };
   img.src=furl(openEd.src,openEd.i);
@@ -985,6 +1013,19 @@ async function buildPal(pw){
 const hex2rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
 function bindCanvas(cv){
   let painting=false,last=null;
+  // 휠로 확대·축소. 커서가 가리키던 지점이 그대로 있게 스크롤도 같이 옮긴다.
+  cv.parentNode.parentNode.addEventListener('wheel',e=>{
+    if(!base)return;
+    e.preventDefault();
+    const box=cv.getBoundingClientRect();
+    const ox=(e.clientX-box.left)/base.z, oy=(e.clientY-box.top)/base.z;   // 그림 좌표
+    const before=base.z;
+    setZoom(e.deltaY<0?before+Math.max(1,Math.round(before*0.25)):before-Math.max(1,Math.round(before*0.2)));
+    edZoom=0;
+    document.querySelectorAll('.ed h2 [data-z]').forEach(t=>t.setAttribute('aria-pressed','false'));
+    const sc=cv.closest('.cw');
+    if(sc){ sc.scrollLeft += ox*(base.z-before) ; sc.scrollTop += oy*(base.z-before); }
+  },{passive:false});
   const pos=e=>{const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)/base.z,y:(e.clientY-r.top)/base.z}};
   const rd=v=>Math.round(v*10)/10;
   cv.onpointerdown=e=>{

@@ -848,7 +848,7 @@ addEventListener('keydown',e=>{
 });
 
 // ── 큰 편집기 ────────────────────────────────────────────────────────────
-let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[],edZoom=0,edFull=false;
+let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[],edZoom=0,edFull=false,mountedKey=null;
 function editor(){
   const wrap=el('div','ed'+(edFull?' full':''));
   const h=el('h2');h.innerHTML='낱장 편집 <span class="mono">'+(openEd.src==='old'?'지금':'새')+openEd.i+'</span>';
@@ -863,7 +863,7 @@ function editor(){
   const fs=el('button');fs.textContent=edFull?'창으로':'전체화면';fs.setAttribute('aria-pressed',String(edFull));
   fs.onclick=()=>{edFull=!edFull;render()};h.appendChild(fs);
   const cls=el('button','close');cls.textContent='닫기';cls.style.marginLeft='0';
-  cls.onclick=()=>{openEd=null;edFull=false;render()};h.appendChild(cls);
+  cls.onclick=()=>{openEd=null;edFull=false;mountedKey=null;render()};h.appendChild(cls);
   wrap.appendChild(h);
 
   const main=el('div','edmain');
@@ -914,7 +914,8 @@ function editor(){
   opts.append(ub,rb);T.appendChild(opts);
 
   const ap=el('button','primary');ap.id='eapply';ap.textContent='이 낱장에 적용';
-  ap.onclick=()=>{const k=K(openEd.src,openEd.i);if(strokes.length)edits[k]=strokes.slice();else delete edits[k];openEd=null;render()};
+  ap.onclick=()=>{const k=K(openEd.src,openEd.i);if(strokes.length)edits[k]=strokes.slice();else delete edits[k];
+    openEd=null;mountedKey=null;render()};
   T.appendChild(ap);
   const hint=el('div');hint.className='cap';hint.style.textAlign='left';
   hint.innerHTML='손댄 자국은 좌표로 저장됩니다. 원본 gif 는 안 바뀝니다.<br>'
@@ -948,12 +949,25 @@ function mount(cv,on,gr,pw){
     const z=edZoom||autoZoom();
     [cv,on,gr].forEach(c=>{c.width=img.width;c.height=img.height});
     setZoom(z);
-    strokes=(edits[K(openEd.src,openEd.i)]||[]).slice();
+    // 같은 낱장을 다시 그리는 것뿐이면(전체화면 전환 등) 하던 붓질을 이어간다.
+    // 여기서 무조건 저장본을 다시 읽으면 아직 '적용' 안 한 작업이 조용히 사라진다.
+    const k=K(openEd.src,openEd.i);
+    if(mountedKey!==k){ strokes=(edits[k]||[]).slice(); mountedKey=k; }
     redraw();drawOnion(on);buildPal(pw);
     bindCanvas(cv);
   };
   img.src=furl(openEd.src,openEd.i);
 }
+/** 고른 색을 화면에 반영한다. render() 를 부르면 그리던 붓질이 날아간다. */
+function setColor(hex){
+  color=hex;
+  const box=document.querySelector('.ed .cur .box');if(box)box.style.background=hex;
+  const ci=document.querySelector('.ed .cur input[type=color]');if(ci)ci.value=hex;
+  document.querySelectorAll('.ed .pal .sw').forEach(o=>{
+    o.classList.toggle('on',(o.style.background||'').replace(/\s/g,'')===hexToRgbCss(hex));
+  });
+}
+const hexToRgbCss=h=>'rgb('+[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)).join(',')+')';
 function ctxOf(){return document.getElementById('cv').getContext('2d',{willReadFrequently:true})}
 function redraw(){
   const c=ctxOf();c.clearRect(0,0,base.w,base.h);c.drawImage(base.img,0,0);
@@ -1004,11 +1018,7 @@ async function buildPal(pw){
   const r=await fetch('/api/palette?dir='+encodeURIComponent(cur.dir)+'&kind='+cur.kind+'&src='+openEd.src+'&i='+openEd.i);
   pal=await r.json();pw.innerHTML='';
   pal.forEach(p=>{const b=el('button','sw'+(p.hex===color?' on':''));b.style.background=p.hex;b.title=p.hex+' · '+p.n+'px';
-    b.onclick=()=>{color=p.hex;
-      pw.querySelectorAll('.sw').forEach(o=>o.classList.remove('on'));b.classList.add('on');
-      const box=document.querySelector('.ed .cur .box');if(box)box.style.background=color;
-      const ci=document.querySelector('.ed .cur input[type=color]');if(ci)ci.value=color;
-    };pw.appendChild(b)});
+    b.onclick=()=>{setColor(p.hex)};pw.appendChild(b)});
 }
 const hex2rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
 function bindCanvas(cv){
@@ -1031,7 +1041,8 @@ function bindCanvas(cv){
   cv.onpointerdown=e=>{
     cv.setPointerCapture(e.pointerId);const p=pos(e);
     if(tool==='picker'){const c=ctxOf();const d=c.getImageData(Math.floor(p.x),Math.floor(p.y),1,1).data;
-      color='#'+[d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,'0')).join('');render();return}
+      color='#'+[d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,'0')).join('');
+      setColor(color);return}
     if(tool==='bucket'){strokes.push({t:'fill',x:rd(p.x),y:rd(p.y),color:hex2rgb(color),tol});redraw();return}
     if(tool==='swap'){const c=ctxOf();const d=c.getImageData(Math.floor(p.x),Math.floor(p.y),1,1).data;
       strokes.push({t:'swap',from:[d[0],d[1],d[2]],to:hex2rgb(color),tol});redraw();return}

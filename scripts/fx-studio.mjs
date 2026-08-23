@@ -305,7 +305,11 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .field{position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--line);
     background:#20242e;flex:0 0 auto}
   .field img{position:absolute;image-rendering:pixelated}
-  .field .bg{left:0;top:0;width:100%;height:100%;object-fit:cover;opacity:.85;image-rendering:auto}
+  .field .scene{position:absolute;left:0;top:0;width:100%;overflow:hidden;background:#3a7bd5}
+  .field .panel{position:absolute;left:0;width:100%;background:#1e293b;border-top:2px solid rgba(255,255,255,.1);
+    color:rgba(255,255,255,.35);font-size:11px;display:grid;place-items:center}
+  /* 게임은 backgroundSize:cover · backgroundPosition:bottom 으로 깐다 */
+  .field .bg{left:0;top:0;width:100%;height:100%;object-fit:cover;object-position:bottom;image-rendering:auto}
   .field .slotbox{position:absolute;border:1px dashed rgba(255,255,255,.3);border-radius:3px;pointer-events:none}
   .gopts{display:flex;flex-direction:column;gap:7px;width:250px;flex:0 0 auto}
   .gopts .cur{gap:6px}
@@ -343,9 +347,14 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
 </main>
 <script>
 const $=s=>document.querySelector(s), el=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e};
-// SpellRaid 의 CALIB_DEFAULTS 를 그대로 옮긴 값. 820x700 기준.
+// SpellRaid 의 CALIB_DEFAULTS 를 그대로 옮긴 값. 820x700 캔버스 기준.
 const CANVAS=[820,700];
 const SLOT={boss:{x:509,y:26,s:120},player:{x:355,y:208,s:97},atk:{x:353,y:99,s:200},atkd:{x:318,y:35,s:318}};
+// 캔버스 아래쪽은 문제 패널이다: flex 0 0 clamp(300px, 56%, 540px) → 700의 56% = 392px.
+// 그래서 배경이 깔리는 장면은 위 308px 뿐이고, backgroundPosition 은 bottom 이다.
+// FX 층은 장면 밖 캔버스 층에 그려져서 패널 위로 넘어올 수 있다(그래서 안 잘린다).
+const PANEL_H=Math.min(540,Math.max(300,Math.round(CANVAS[1]*0.56)));
+const SCENE_H=CANVAS[1]-PANEL_H;
 let items=[],cur=null,meta={},seq=[],edits={},fit=3000,zoom=1,playT=null,openEd=null;
 let leadShort=true,undoStack=[],blend='screen',showBg=true,showSlots=false;
 const furl=(src,i)=>'/frame.png?dir='+encodeURIComponent(cur.dir)+'&kind='+cur.kind+'&src='+src+'&i='+i;
@@ -446,12 +455,25 @@ function seqRow(){
   const c=el('div','cap');c.textContent='만든 것 '+seq.length+'장';box.appendChild(c);row.appendChild(box);
   const sp=el('div','strip');sp.id='seqstrip';
   seq.forEach((s,n)=>{
-    const b=el('div','slot'+(s.src==='old'?' old':''));b.draggable=true;b.dataset.n=n;
+    const b=el('div','slot'+(s.src==='old'?' old':'')+(nEdits(s.src,s.i)?' edited':'')
+      +(openEd&&openEd.src===s.src&&openEd.i===s.i?' sel':''));
+    b.draggable=true;b.dataset.n=n;b.title='눌러서 이 낱장 편집';
     const img=el('img');img.src=furl(s.src,s.i)+'&t='+nEdits(s.src,s.i);b.appendChild(img);
     const m=el('div','m');m.textContent=(s.src==='old'?'지금':'새')+s.i;b.appendChild(m);
+    // 담아 놓고 보다가 손보고 싶어지는 게 자연스러운 순서다. 재료 줄로 되돌아가
+    // 같은 낱장을 다시 찾게 만들면 안 된다.
+    b.onclick=()=>{openEd={src:s.src,i:s.i};render();
+      setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
     const ops=el('div','ops');
-    [['◀',-1],['▶',1],['×',0]].forEach(([t,d])=>{const x=el('button',d===0?'x':'');x.textContent=t;
-      x.onclick=e=>{e.stopPropagation();push();if(d===0)seq.splice(n,1);else{const j=n+d;if(j<0||j>=seq.length)return;[seq[n],seq[j]]=[seq[j],seq[n]]}render()};ops.appendChild(x)});
+    [['✎','edit'],['◀',-1],['▶',1],['×',0]].forEach(([t,d])=>{
+      const x=el('button',d===0?'x':'');x.textContent=t;
+      x.onclick=e=>{e.stopPropagation();
+        if(d==='edit'){b.onclick();return}
+        push();
+        if(d===0)seq.splice(n,1);
+        else{const j=n+d;if(j<0||j>=seq.length)return;[seq[n],seq[j]]=[seq[j],seq[n]]}
+        render()};
+      ops.appendChild(x)});
     b.appendChild(ops);
     b.addEventListener('dragstart',e=>{drag={kind:'move',n};b.classList.add('dragging');e.dataTransfer.effectAllowed='move'});
     b.addEventListener('dragend',()=>{b.classList.remove('dragging');clearMark();drag=null});
@@ -483,7 +505,13 @@ function gameView(){
   const SC=0.62;
   const f=el('div','field');
   f.style.width=CANVAS[0]*SC+'px';f.style.height=CANVAS[1]*SC+'px';
-  if(showBg){const bg=el('img');bg.className='bg';bg.src='/battle-bg';f.appendChild(bg)}
+  // 장면(배경 + 캐릭터)은 위쪽 SCENE_H 만, 아래는 문제 패널이다.
+  const scene=el('div','scene');
+  scene.style.height=SCENE_H*SC+'px';
+  if(showBg){const bg=el('img');bg.className='bg';bg.src='/battle-bg';scene.appendChild(bg)}
+  f.appendChild(scene);
+  const panel=el('div','panel');panel.style.top=SCENE_H*SC+'px';panel.style.height=PANEL_H*SC+'px';
+  panel.textContent='문제 패널';f.appendChild(panel);
   const put=(img,slot)=>{img.style.left=slot.x*SC+'px';img.style.top=slot.y*SC+'px';
     img.style.width=slot.s*SC+'px';img.style.height=slot.s*SC+'px';img.style.objectFit='contain';f.appendChild(img)};
   const isAtk=cur.kind==='attack';

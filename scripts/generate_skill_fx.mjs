@@ -303,6 +303,87 @@ const CHARACTERS = {
     hitDescription: 'cross poison impact, two glowing purple venom blades slash in a crossing shape meeting at the center, toxic violet cross-shaped burst with dripping venom and sparks along both blades, pixel art',
     hitAction: 'two purple venom blades slash crossing at the center, the cross flashes then venom sparks scatter outward and fade',
   },
+
+  // ── 2026-08-23 추가 — 크로뱃 다음 차례 ────────────────────────────────────
+  // Pikachu line — Thunder Shock / Thunderbolt
+  pikachu: {
+    spriteId: 25, canvasSize: 128,
+    attackAction:  'pikachu stands at bottom-left corner of canvas facing right, crackling yellow electricity bursts from its red cheeks and arcs diagonally toward the top-right corner, jagged lightning bolts streak upper-right, side view',
+    attackedAction:'pikachu stands at top-right corner of canvas facing the viewer, crackling yellow electricity bursts from its red cheeks and arcs diagonally toward the bottom-left corner, jagged lightning bolts streak lower-left, front view',
+    hitColor: 0xFFE24AFF, hitShape: 'star', elemental: true,
+    hitDescription: 'thunder shock impact, jagged yellow lightning arcs crack outward from the point of impact, small electric sparks snap in the air, pixel art',
+    hitAction: 'lightning arcs snap outward in sharp branches, then flicker and vanish from the tips inward',
+  },
+  raichu: {
+    spriteId: 26, canvasSize: 128,
+    attackAction:  'raichu stands at bottom-left corner of canvas facing right, a thick bolt of yellow lightning discharges from its cheeks and long tail toward the top-right corner, the bolt forks as it streaks upper-right, side view',
+    attackedAction:'raichu stands at top-right corner of canvas facing the viewer, a thick bolt of yellow lightning discharges from its cheeks and long tail toward the bottom-left corner, the bolt forks as it streaks lower-left, front view',
+    hitColor: 0xFFD028FF, hitShape: 'star', elemental: true,
+    hitDescription: 'thunderbolt impact, a blinding yellow-white electric burst with thick forked branches tearing outward, pixel art',
+    hitAction: 'the bolt lands and forks outward, the branches flash white then fade from the outer tips inward',
+  },
+
+  // Clefairy line — Pound / Moonblast
+  clefairy: {
+    spriteId: 35, canvasSize: 128,
+    attackAction:  'clefairy stands at bottom-left corner of canvas swinging its short arm upward to the right, a soft pink impact arc trails from its fist toward the top-right corner, side view',
+    attackedAction:'clefairy stands at top-right corner of canvas facing the viewer swinging its short arm down to the left, a soft pink impact arc trails from its fist toward the bottom-left corner, front view',
+    hitColor: 0xF5A9C8FF, hitShape: 'circle', elemental: false,
+    hitDescription: 'pound impact, a blunt pink shockwave puff at the point of contact with a few star-shaped sparkles, pixel art',
+    hitAction: 'the puff expands once and fades, sparkles drift outward and wink out',
+  },
+  clefable: {
+    spriteId: 36, canvasSize: 128,
+    attackAction:  'clefable stands at bottom-left corner of canvas facing right, gathers a glowing pale-pink moon orb between its raised hands and fires it toward the top-right corner, the orb trails moonlight upper-right, side view',
+    attackedAction:'clefable stands at top-right corner of canvas facing the viewer, gathers a glowing pale-pink moon orb between its raised hands and fires it toward the bottom-left corner, the orb trails moonlight lower-left, front view',
+    hitColor: 0xF2B8E6FF, hitShape: 'ring', elemental: true,
+    hitDescription: 'moonblast impact, a pale pink lunar sphere detonates into concentric rings of moonlight with drifting sparkles, pixel art',
+    hitAction: 'rings of moonlight pulse outward one after another, sparkles drift and fade from the outside in',
+  },
+
+  // Jigglypuff line — Pound / Hyper Voice
+  jigglypuff: {
+    spriteId: 39, canvasSize: 128,
+    attackAction:  'jigglypuff stands at bottom-left corner of canvas swinging its stubby arm upward to the right, a round pink impact puff trails from its fist toward the top-right corner, side view',
+    attackedAction:'jigglypuff stands at top-right corner of canvas facing the viewer swinging its stubby arm down to the left, a round pink impact puff trails from its fist toward the bottom-left corner, front view',
+    hitColor: 0xF7B5D0FF, hitShape: 'circle', elemental: false,
+    hitDescription: 'pound impact, a soft round pink shockwave at the point of contact, pixel art',
+    hitAction: 'the shockwave swells once then shrinks back to nothing',
+  },
+  wigglytuff: {
+    spriteId: 40, canvasSize: 128,
+    attackAction:  'wigglytuff stands at bottom-left corner of canvas facing right with its mouth wide open, rippling pink sound rings blast from its mouth toward the top-right corner, concentric rings travel upper-right, side view',
+    attackedAction:'wigglytuff stands at top-right corner of canvas facing the viewer with its mouth wide open, rippling pink sound rings blast from its mouth toward the bottom-left corner, concentric rings travel lower-left, front view',
+    hitColor: 0xF48FC0FF, hitShape: 'ring', elemental: false,
+    hitDescription: 'hyper voice impact, loud concentric pink sound rings hammer through the target, the air distorts along each ring, pixel art',
+    hitAction: 'sound rings pulse outward in quick succession, each ring thins and fades from its outer edge',
+  },
+
+  // Oddish line — Absorb / Acid / Solar Beam
+  oddish: {
+    spriteId: 43, canvasSize: 128,
+    attackAction:  'oddish stands at bottom-left corner of canvas facing right, thin green draining tendrils reach from its leaves toward the top-right corner, small green energy motes travel back along them, side view',
+    attackedAction:'oddish stands at top-right corner of canvas facing the viewer, thin green draining tendrils reach from its leaves toward the bottom-left corner, small green energy motes travel back along them, front view',
+    hitColor: 0x7FC24AFF, hitShape: 'circle', elemental: false,
+    hitDescription: 'absorb impact, soft green energy motes are pulled out of the target and spiral away, faint green glow at the contact point, pixel art',
+    hitAction: 'motes lift off the target and spiral away, dimming as they go',
+  },
+  gloom: {
+    spriteId: 44, canvasSize: 128,
+    attackAction:  'gloom stands at bottom-left corner of canvas facing right, spits a splash of sizzling purple acid from its mouth arcing toward the top-right corner, acid droplets trail upper-right, side view',
+    attackedAction:'gloom stands at top-right corner of canvas facing the viewer, spits a splash of sizzling purple acid from its mouth arcing toward the bottom-left corner, acid droplets trail lower-left, front view',
+    hitColor: 0xA24AC8FF, hitShape: 'scatter', elemental: true,
+    hitDescription: 'acid splash impact, purple corrosive droplets burst and sizzle where they land, small dissolving bubbles pop, pixel art',
+    hitAction: 'droplets splatter outward in separate arcs, sizzle, then dissolve one by one',
+  },
+  vileplume: {
+    spriteId: 45, canvasSize: 128,
+    attackAction:  'vileplume stands at bottom-left corner of canvas facing right, a bright yellow-green beam of stored sunlight fires from the giant flower on its head toward the top-right corner, the beam fills the upper-right, side view',
+    attackedAction:'vileplume stands at top-right corner of canvas facing the viewer, a bright yellow-green beam of stored sunlight fires from the giant flower on its head toward the bottom-left corner, the beam fills the lower-left, front view',
+    hitColor: 0xE4FF52FF, hitShape: 'star', elemental: true,
+    hitDescription: 'solar beam impact, a blinding yellow-green light detonation with straight rays shooting outward like a compass rose, pixel art',
+    hitAction: 'rays shoot out to full length together, then fade from the tips inward leaving a dimming afterglow',
+  },
 };
 
 // ---------------------------------------------------------------------------

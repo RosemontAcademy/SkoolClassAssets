@@ -306,8 +306,8 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
     background:#20242e;flex:0 0 auto}
   .field img{position:absolute;image-rendering:pixelated}
   .field .scene{position:absolute;left:0;top:0;width:100%;overflow:hidden;background:#3a7bd5}
-  .field .panel{position:absolute;left:0;width:100%;background:#1e293b;border-top:2px solid rgba(255,255,255,.1);
-    color:rgba(255,255,255,.35);font-size:11px;display:grid;place-items:center}
+  .field .panelline{position:absolute;left:0;width:100%;height:0;border-top:2px dashed rgba(255,255,255,.28);
+    color:rgba(255,255,255,.5);font-size:10px;padding-left:6px;pointer-events:none}
   /* 게임은 backgroundSize:cover · backgroundPosition:bottom 으로 깐다 */
   .field .bg{left:0;top:0;width:100%;height:100%;object-fit:cover;object-position:bottom;image-rendering:auto}
   .field .slotbox{position:absolute;border:1px dashed rgba(255,255,255,.3);border-radius:3px;pointer-events:none}
@@ -325,7 +325,11 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
     background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
     linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:16px 16px;background-position:0 0,8px 8px}
   #cv{image-rendering:pixelated;cursor:crosshair;touch-action:none;border-radius:4px;display:block}
-  #onion{position:absolute;left:8px;top:8px;pointer-events:none;image-rendering:pixelated;opacity:.28;border-radius:4px}
+  /* 앞 장은 파랗게 물들여 보여준다 — 안 그러면 "왜 겹쳐 보이지" 가 된다 */
+  #onion{position:absolute;left:8px;top:8px;pointer-events:none;image-rendering:pixelated;
+    opacity:.32;border-radius:4px;filter:grayscale(1) sepia(1) hue-rotate(175deg) saturate(4)}
+  .onionmark{position:absolute;right:12px;top:12px;font-size:10px;font-weight:800;color:#7aa7ff;
+    background:rgba(0,0,0,.55);border-radius:5px;padding:1px 6px;pointer-events:none}
   #grid{position:absolute;left:8px;top:8px;pointer-events:none;border-radius:4px}
   .tools{display:flex;flex-direction:column;gap:8px;min-width:210px}
   .tgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
@@ -504,17 +508,21 @@ function gameView(){
   const wrap=el('div','game');
   const SC=0.62;
   const f=el('div','field');
-  f.style.width=CANVAS[0]*SC+'px';f.style.height=CANVAS[1]*SC+'px';
-  // 장면(배경 + 캐릭터)은 위쪽 SCENE_H 만, 아래는 문제 패널이다.
+  const isAtk0=cur.kind==='attack';
+  const fxSlot=isAtk0?SLOT.atk:SLOT.atkd;
+  // 문제 패널은 텅 빈 칸이라 자리만 잡아먹는다. 장면 높이만 쓰되, FX 가 그 아래로
+  // 넘치는 경우(attacked 는 y35+318=353 으로 장면 308 을 넘는다)만 그만큼 더 둔다.
+  const fieldH=Math.max(SCENE_H,fxSlot.y+fxSlot.s)+6;
+  f.style.width=CANVAS[0]*SC+'px';f.style.height=fieldH*SC+'px';
   const scene=el('div','scene');
   scene.style.height=SCENE_H*SC+'px';
   if(showBg){const bg=el('img');bg.className='bg';bg.src='/battle-bg';scene.appendChild(bg)}
   f.appendChild(scene);
-  const panel=el('div','panel');panel.style.top=SCENE_H*SC+'px';panel.style.height=PANEL_H*SC+'px';
-  panel.textContent='문제 패널';f.appendChild(panel);
+  if(fieldH>SCENE_H+6){const line=el('div','panelline');line.style.top=SCENE_H*SC+'px';
+    line.textContent='여기부터 문제 패널';f.appendChild(line)}
   const put=(img,slot)=>{img.style.left=slot.x*SC+'px';img.style.top=slot.y*SC+'px';
     img.style.width=slot.s*SC+'px';img.style.height=slot.s*SC+'px';img.style.objectFit='contain';f.appendChild(img)};
-  const isAtk=cur.kind==='attack';
+  const isAtk=isAtk0;
   if(isAtk){const b=el('img');b.src='/sprite.gif?dir='+encodeURIComponent(cur.dir);put(b,SLOT.boss)}
   else{const p=el('img');p.src='/sprite.gif?dir='+encodeURIComponent(cur.dir)+'&back=1';put(p,SLOT.player)}
   const fx=el('img');fx.id='gamefx';fx.style.mixBlendMode=blend==='screen'?'screen':'normal';
@@ -568,7 +576,7 @@ async function save(){
 }
 
 // ── 큰 편집기 ────────────────────────────────────────────────────────────
-let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=true,strokes=[],base=null,pal=[];
+let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[];
 function editor(){
   const wrap=el('div','ed');
   const h=el('h2');h.innerHTML='낱장 편집 <span class="mono">'+(openEd.src==='old'?'지금':'새')+openEd.i+'</span>';
@@ -578,7 +586,9 @@ function editor(){
   const main=el('div','edmain');
   const cw=el('div','cw');
   const on=el('canvas');on.id='onion';const gr=el('canvas');gr.id='grid';const cv=el('canvas');cv.id='cv';
-  cw.append(on,cv,gr);main.appendChild(cw);
+  cw.append(on,cv,gr);
+  if(onionOn&&openEd.i>0){const mk=el('div','onionmark');mk.textContent='앞 장 비침';cw.appendChild(mk)}
+  main.appendChild(cw);
 
   const T=el('div','tools');
   const tg=el('div','tgrid');
@@ -602,6 +612,7 @@ function editor(){
   const pw=el('div','pal');T.appendChild(pw);
   const opts=el('div','cur');
   const ob=el('button');ob.textContent='어니언스킨';ob.setAttribute('aria-pressed',String(onionOn));
+  ob.title='앞 장을 파랗게 비쳐 보여줍니다 — 움직임을 보며 손댈 때 씁니다';
   ob.onclick=()=>{onionOn=!onionOn;render()};opts.appendChild(ob);
   const ub=el('button');ub.textContent='되돌리기';ub.onclick=()=>{if(!strokes.length)return;
     const l=strokes[strokes.length-1];if(l.t==='p'||l.t==='c'){while(strokes.length&&(strokes[strokes.length-1].t==='p'||strokes[strokes.length-1].t==='c'))strokes.pop()}else strokes.pop();redraw()};

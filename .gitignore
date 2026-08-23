@@ -1,0 +1,20 @@
+node_modules
+bower_components
+.DS_Store
+npm-debug.log
+test/
+desktop.ini
+
+# PhpStorm
+.idea/
+
+# Versioning
+.svn/
+.git/
+
+smogon/
+scripts/downloads/
+scripts/.pixellab.key
+
+# 편집기가 덮어쓰기 전에 남기는 로컬 백업. git 이력이 이미 백업이라 올릴 필요가 없다.
+skillFX/*/_prev/

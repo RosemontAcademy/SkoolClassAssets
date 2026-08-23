@@ -21,10 +21,10 @@
  */
 
 import { createServer } from 'http';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { PNG } from 'pngjs';
 import { readFrames, encodeGif, applyEdits, fillRatio, paletteOf, listItems, sourcesFor } from './lib/fxgif.mjs';
 
@@ -43,6 +43,51 @@ if (!existsSync(FXD)) {
   console.error('  이 파일이 SkoolClassAssets/scripts/ 안에 있어야 합니다.');
   console.error('');
   process.exit(1);
+}
+
+// ── 게임의 배치 ──────────────────────────────────────────────────────────────
+// 미리보기가 게임과 같으려면 슬롯 좌표도 게임에서 가져와야 한다. 숫자를 여기 박아 두면
+// 원장님이 게임에서 CALIBRATE 로 배치를 바꿀 때마다 조용히 어긋난다.
+// 정본은 DB(skoolclass_settings.raid_calib_layout), 못 읽으면 코드 기본값으로 떨어진다.
+const CALIB_FALLBACK = [
+  { x: 516, y: 19, size: 117 },   // 보스
+  { x: 355, y: 208, size: 97 },   // 학생
+  { x: 268, y: 222, size: 81 },   // 파티
+  { x: 353, y: 99, size: 200 },   // Attack FX
+  { x: 357, y: 36, size: 276 },   // Attacked FX
+  { x: 516, y: 52, size: 94 },    // Hit(보스)
+  { x: 353, y: 214, size: 98 },   // Hit(학생)
+];
+
+function readEnv() {
+  const p = join(__dirname, '..', '..', '.env.local');
+  if (!existsSync(p)) return {};
+  const out = {};
+  for (const line of readFileSync(p, 'utf8').split(/\r?\n/)) {
+    const m = /^([A-Z_][\w]*)=(.*)$/.exec(line.trim());
+    if (m) out[m[1]] = m[2].replace(/^['"]|['"]$/g, '').trim();
+  }
+  return out;
+}
+
+let calibCache = null;
+async function calibration(force = false) {
+  if (calibCache && !force) return calibCache;
+  const env = readEnv();
+  const url = env.VITE_SUPABASE_URL, key = env.SUPABASE_SERVICE_KEY || env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) return (calibCache = { items: CALIB_FALLBACK, source: '코드 기본값 (.env.local 을 못 읽음)' });
+  try {
+    const r = await fetch(`${url}/rest/v1/skoolclass_settings?key=eq.raid_calib_layout&select=value,updated_at`,
+      { headers: { apikey: key, Authorization: 'Bearer ' + key } });
+    const rows = await r.json();
+    if (!Array.isArray(rows) || !rows.length) return (calibCache = { items: CALIB_FALLBACK, source: '코드 기본값 (DB에 저장된 배치 없음)' });
+    const v = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
+    const items = v.items || v;
+    if (!Array.isArray(items) || items.length < 5) return (calibCache = { items: CALIB_FALLBACK, source: '코드 기본값 (DB 값 모양이 이상함)' });
+    return (calibCache = { items, source: '게임에 저장된 배치', updated_at: rows[0].updated_at, canvas: [v.calibW || 820, v.calibH || 700] });
+  } catch (e) {
+    return (calibCache = { items: CALIB_FALLBACK, source: '코드 기본값 (DB에 못 닿음: ' + e.message + ')' });
+  }
 }
 
 // ── 낱장 캐시 (한 번 뽑으면 들고 있는다) ─────────────────────────────────────
@@ -123,6 +168,132 @@ function save(body) {
   };
 }
 
+// ── 올리기 ───────────────────────────────────────────────────────────────────
+// 저장은 이 PC 의 파일만 바꾼다. 게임은 GitHub → jsDelivr 에서 읽으므로
+// 커밋·푸시·CDN 비우기까지 가야 아이들 화면에 나온다. 그 세 걸음을 한 번에 한다.
+//
+// 안전장치: **방금 만진 파일만** 골라 담는다. git add -A 를 쓰면 원장님이 다른 창에서
+// 하던 작업까지 딸려 나간다. commit 도 경로를 지정해 인덱스에 뭐가 올라와 있든
+// 그 경로만 담기게 한다.
+function sh(cmd, cmdArgs) {
+  const r = spawnSync(cmd, cmdArgs, { cwd: join(__dirname, '..'), encoding: 'utf8', windowsHide: true });
+  // stdout 을 다듬지 않는다. `git status --porcelain` 은 앞 두 칸이 상태 표시라
+  // ` M path` 처럼 공백으로 시작하는데, trim 하면 그 공백이 날아가 경로가 한 글자
+  // 갉아먹힌다. stderr 도 섞지 않는다 — 경고 한 줄이 목록에 끼어든다.
+  return { code: r.status, out: r.stdout || '', err: (r.stderr || '').trim() };
+}
+
+function pending() {
+  const st = sh('git', ['status', '--porcelain', '--', 'skillFX']);
+  const files = [];
+  for (const line of st.out.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const p = line.slice(3).replace(/^"|"$/g, '');
+    if (p.includes('/_prev/')) continue;                       // 로컬 백업은 안 올린다
+    if (/skillFX\/[^/]+\/[^/]+-fx\.gif$/.test(p) || /skillFX\/[^/]+\/recipe\.[a-z]+\.json$/.test(p)) files.push(p);
+  }
+  return [...new Set(files)];
+}
+
+async function publish(pinGame = true) {
+  const files = pending();
+
+  // 올릴 파일이 없어도, 게임이 아직 옛 커밋을 가리키고 있으면 못박기는 해야 한다.
+  // (자산은 올렸는데 게임 코드 갱신만 빠진 상태가 실제로 생긴다)
+  if (!files.length) {
+    if (!pinGame) return { ok: false, error: '올릴 것이 없습니다. 먼저 저장하세요.' };
+    const sha = sh('git', ['rev-parse', 'HEAD']).out.trim();
+    const game = pinToSha(sha);
+    if (game.skipped) return { ok: false, error: '올릴 것이 없고, 게임도 이미 최신입니다.' };
+    return { ok: game.ok, error: game.error, sha, game, gifs: [],
+      log: ['올릴 파일은 없음', game.ok ? '게임 코드만 갱신·배포 시작' : '게임 코드 갱신 실패'],
+      message: '자산은 이미 올라가 있어 게임 주소만 못박았습니다.' };
+  }
+
+  const gifs = files.filter(f => f.endsWith('.gif'));
+  const names = [...new Set(gifs.map(f => f.split('/')[1]))];
+  const log = [];
+
+  const add = sh('git', ['add', '--', ...files]);
+  if (add.code !== 0) return { ok: false, error: '담기 실패: ' + (add.err || add.out) };
+  log.push('담음 ' + files.length + '개');
+
+  const msg = 'FX 편집기에서 다듬은 연출 ' + gifs.length + '개 — ' + names.join(', ');
+  const ci = sh('git', ['commit', '-m', msg, '--', ...files]);
+  if (ci.code !== 0) return { ok: false, error: '커밋 실패: ' + (ci.err || ci.out), log };
+  log.push('커밋함');
+
+  const push = sh('git', ['push', 'origin', 'main']);
+  if (push.code !== 0) return { ok: false, error: '푸시 실패: ' + (push.err || push.out), log };
+  log.push('푸시함');
+
+  const sha = sh('git', ['rev-parse', 'HEAD']).out.trim();
+  log.push('커밋 ' + sha.slice(0, 8));
+
+  // purge 는 파일 캐시만 비운다. `@main` 이 **어느 커밋을 가리키는지**는 그대로라
+  // 비운 자리에 또 옛 내용이 채워진다(실측: purge 두 번, 쿼리 붙이기 모두 소용 없음).
+  // 그래서 게임 쪽 주소를 방금 커밋 SHA 로 못박는다 — 주소가 매번 달라지니 낡을 수가 없다.
+  let game = null;
+  if (pinGame) {
+    game = pinToSha(sha);
+    log.push(game.ok ? '게임 코드 갱신·배포 시작' : '게임 코드 갱신 실패');
+  }
+
+  // 그래도 @main 주소를 직접 여는 경우를 위해 비워는 둔다.
+  const purged = [];
+  for (const g of gifs) {
+    try {
+      const r = await fetch(`https://purge.jsdelivr.net/gh/${REPO}@main/${g}`);
+      const j = await r.json().catch(() => ({}));
+      purged.push({ file: g, status: j.status || r.status });
+    } catch (e) { purged.push({ file: g, status: '실패: ' + e.message }); }
+  }
+
+  // 못박은 주소가 진짜로 새 파일을 주는지 확인한다. "올렸습니다" 라고만 하고
+  // 실제로 안 바뀌는 게 제일 나쁘다.
+  let verify = null;
+  if (gifs.length) {
+    try {
+      const url = `https://cdn.jsdelivr.net/gh/${REPO}@${sha}/${gifs[0]}`;
+      const r = await fetch(url, { method: 'HEAD' });
+      const cdnLen = +(r.headers.get('content-length') || 0);
+      const localLen = statSync(join(__dirname, '..', gifs[0])).size;
+      verify = { url, cdnLen, localLen, same: cdnLen === localLen };
+    } catch (e) { verify = { error: e.message }; }
+  }
+
+  return { ok: true, files, gifs, log, purged, sha, game, verify, message: msg };
+}
+
+/**
+ * 게임이 읽는 주소의 `@main` 을 방금 올린 커밋으로 못박는다.
+ * 다른 저장소(skoolclass-pro)를 건드리고 Vercel 배포를 일으키므로,
+ * 건드리는 파일은 딱 두 개로 제한한다 — 원장님이 다른 창에서 하던 작업이 딸려가면 안 된다.
+ */
+function pinToSha(sha) {
+  const root = join(__dirname, '..', '..');
+  const rel = 'api/_shared/pokemon_gen1.ts';
+  const file = join(root, rel);
+  if (!existsSync(file)) return { ok: false, error: '게임 코드를 못 찾았습니다: ' + file };
+
+  const before = readFileSync(file, 'utf8');
+  const re = /(const CDN_MAIN = 'https:\/\/cdn\.jsdelivr\.net\/gh\/RosemontAcademy\/SkoolClassAssets@)([^']+)(')/;
+  const m = re.exec(before);
+  if (!m) return { ok: false, error: 'CDN_MAIN 줄을 못 찾았습니다' };
+  if (m[2] === sha) return { ok: true, skipped: '이미 그 커밋을 가리킵니다' };
+  writeFileSync(file, before.replace(re, `$1${sha}$3`));
+
+  const g = (a) => spawnSync('git', a, { cwd: root, encoding: 'utf8', windowsHide: true });
+  const paths = [rel, 'SkoolClassAssets'];
+  const add = g(['add', '--', ...paths]);
+  if (add.status !== 0) return { ok: false, error: '담기 실패: ' + (add.stderr || '').trim() };
+  const ci = g(['commit', '-m', `FX 자산을 ${sha.slice(0, 8)} 로 못박는다 (jsDelivr @main 은 최대 12시간 낡는다)`, '--', ...paths]);
+  if (ci.status !== 0) return { ok: false, error: '커밋 실패: ' + (ci.stderr || '').trim() };
+  const push = g(['push', 'origin', 'main']);
+  if (push.status !== 0) return { ok: false, error: '푸시 실패: ' + (push.stderr || '').trim() };
+  return { ok: true, from: m[2], to: sha };
+}
+
 // ── 서버 ─────────────────────────────────────────────────────────────────────
 const send = (res, code, type, body) => { res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' }); res.end(body); };
 const json = (res, code, obj) => send(res, code, 'application/json; charset=utf-8', JSON.stringify(obj));
@@ -187,6 +358,25 @@ const server = createServer((req, res) => {
     if (url.pathname === '/api/recipe') {
       const p = join(FXD, url.searchParams.get('dir'), `recipe.${url.searchParams.get('kind')}.json`);
       return json(res, 200, existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null);
+    }
+
+    if (url.pathname === '/api/calib') {
+      calibration(url.searchParams.get('force') === '1')
+        .then(c => json(res, 200, c)).catch(e => json(res, 500, { error: e.message }));
+      return;
+    }
+
+    if (url.pathname === '/api/pending') return json(res, 200, pending());
+
+    if (url.pathname === '/api/publish' && req.method === 'POST') {
+      let raw = '';
+      req.on('data', c => { raw += c; });
+      req.on('end', () => {
+        let pin = true;
+        try { if (raw) pin = JSON.parse(raw).pinGame !== false; } catch {}
+        publish(pin).then(r => json(res, r.ok ? 200 : 400, r)).catch(e => json(res, 500, { error: e.message }));
+      });
+      return;
     }
 
     if (url.pathname === '/api/save' && req.method === 'POST') {
@@ -317,6 +507,9 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
 
   /* ── 큰 편집기 (프레임을 누르면 아래에 펼쳐진다) ── */
   .ed{background:var(--surface);border:2px solid var(--accent);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px}
+  /* 전체화면 — 작은 도트를 크게 놓고 손볼 때 */
+  .ed.full{position:fixed;inset:12px;z-index:60;overflow:auto;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+  .ed h2 button{font-size:12px;padding:4px 9px}
   .ed h2{margin:0;font-size:14px;font-weight:800;display:flex;align-items:center;gap:8px}
   .ed h2 .mono{font-weight:600;font-size:12px;color:var(--muted)}
   .ed .close{margin-left:auto}
@@ -339,6 +532,9 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .sw.on{border-color:var(--accent);transform:scale(1.12)}
   .cur{display:flex;align-items:center;gap:7px;font-size:12px}
   .cur .box{width:26px;height:26px;border-radius:6px;border:1px solid var(--line)}
+  button.pub{background:#166534;border-color:#166534;color:#fff}
+  button.pub:hover{background:#15803d;border-color:#15803d}
+  button.pub[disabled]{opacity:.5}
   .msg{font-size:13px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface)}
   .msg.ok{border-color:color-mix(in srgb,var(--accent) 50%,transparent);color:var(--accent)}
   .msg.err{border-color:color-mix(in srgb,var(--drop) 50%,transparent);color:var(--drop)}
@@ -351,21 +547,35 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
 </main>
 <script>
 const $=s=>document.querySelector(s), el=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e};
-// SpellRaid 의 CALIB_DEFAULTS 를 그대로 옮긴 값. 820x700 캔버스 기준.
-const CANVAS=[820,700];
-const SLOT={boss:{x:509,y:26,s:120},player:{x:355,y:208,s:97},atk:{x:353,y:99,s:200},atkd:{x:318,y:35,s:318}};
+// 슬롯은 게임에서 받아온다(숫자를 여기 박아 두면 배치를 바꿀 때마다 어긋난다).
+let CANVAS=[820,700];
+let SLOT={boss:{x:516,y:19,s:117},player:{x:355,y:208,s:97},atk:{x:353,y:99,s:200},atkd:{x:357,y:36,s:276}};
+let calibSource='불러오는 중';
+async function loadCalib(force){
+  try{
+    const c=await (await fetch('/api/calib'+(force?'?force=1':''))).json();
+    const it=c.items||[];
+    if(it.length>=5){
+      SLOT={boss:{x:it[0].x,y:it[0].y,s:it[0].size},player:{x:it[1].x,y:it[1].y,s:it[1].size},
+            atk:{x:it[3].x,y:it[3].y,s:it[3].size},atkd:{x:it[4].x,y:it[4].y,s:it[4].size}};
+    }
+    if(c.canvas)CANVAS=c.canvas;
+    calibSource=c.source+(c.updated_at?' · '+String(c.updated_at).slice(0,16).replace('T',' '):'');
+  }catch(e){calibSource='못 불러옴 — 코드 기본값'}
+}
 // 캔버스 아래쪽은 문제 패널이다: flex 0 0 clamp(300px, 56%, 540px) → 700의 56% = 392px.
 // 그래서 배경이 깔리는 장면은 위 308px 뿐이고, backgroundPosition 은 bottom 이다.
 // FX 층은 장면 밖 캔버스 층에 그려져서 패널 위로 넘어올 수 있다(그래서 안 잘린다).
 const PANEL_H=Math.min(540,Math.max(300,Math.round(CANVAS[1]*0.56)));
 const SCENE_H=CANVAS[1]-PANEL_H;
 let items=[],cur=null,meta={},seq=[],edits={},fit=3000,zoom=1,playT=null,openEd=null;
-let leadShort=true,undoStack=[],blend='screen',showBg=true,showSlots=false;
+let leadShort=true,undoStack=[],blend='screen',showBg=true,showSlots=false,pinGame=true;
 const furl=(src,i)=>'/frame.png?dir='+encodeURIComponent(cur.dir)+'&kind='+cur.kind+'&src='+src+'&i='+i;
 const K=(src,i)=>src+i;
 const nEdits=(src,i)=>(edits[K(src,i)]||[]).length;
 
 async function boot(){
+  await loadCalib();
   items=await (await fetch('/api/items')).json();
   const L=$('#list');
   items.forEach(it=>{const d=el('div','it');d.dataset.id=it.id;
@@ -406,6 +616,13 @@ function render(){
   const ud=el('button');ud.textContent='되돌리기';ud.disabled=!undoStack.length;
   ud.onclick=()=>{const p=undoStack.pop();if(p){seq=JSON.parse(p);render()}};b.appendChild(ud);
   const sv=el('button','primary');sv.textContent='저장';sv.disabled=!seq.length;sv.onclick=save;b.appendChild(sv);
+  const pin=el('button');pin.id='pinbtn';pin.textContent='게임까지 반영';
+  pin.setAttribute('aria-pressed',String(pinGame));
+  pin.title='켜면 게임 코드의 자산 주소를 이번 커밋으로 못박고 배포까지 합니다(1~2분). 끄면 자산만 올립니다.';
+  pin.onclick=()=>{pinGame=!pinGame;pin.setAttribute('aria-pressed',String(pinGame))};b.appendChild(pin);
+  const pb=el('button','pub');pb.id='pubbtn';pb.textContent='올리기';
+  pb.title='저장한 것을 커밋·푸시하고, 게임 코드까지 갱신합니다';
+  pb.onclick=publish;b.appendChild(pb);
 
   const W=$('#work');W.innerHTML='';
   cur.sources.forEach(s=>W.appendChild(strip(s)));
@@ -544,9 +761,14 @@ function gameView(){
   const sb=el('button');sb.textContent='슬롯 테두리';sb.setAttribute('aria-pressed',String(showSlots));
   sb.onclick=()=>{showSlots=!showSlots;render()};
   ck.append(bb,sb);o.appendChild(ck);
+  const cs=el('div','cur');
+  const src=el('span');src.className='gnote';src.style.flex='1';src.textContent='배치: '+calibSource;
+  const rf=el('button');rf.textContent='배치 새로고침';rf.title='게임에서 CALIBRATE 로 바꾼 배치를 다시 읽어옵니다';
+  rf.onclick=async()=>{await loadCalib(true);render()};
+  cs.append(src,rf);o.appendChild(cs);
   const n=el('div','gnote');
-  n.innerHTML=(isAtk?'FX 는 <b>학생 자리</b>(200px)에 뜨고 학생 스프라이트는 감춰집니다. 보스가 표적입니다.'
-    :'FX 는 <b>보스 자리</b>(318px)에 뜨고 보스 스프라이트는 감춰집니다. 학생이 표적입니다.')
+  n.innerHTML=(isAtk?'FX 는 <b>학생 자리</b>('+SLOT.atk.s+'px)에 뜨고 학생 스프라이트는 감춰집니다. 보스가 표적입니다.'
+    :'FX 는 <b>보스 자리</b>('+SLOT.atkd.s+'px)에 뜨고 보스 스프라이트는 감춰집니다. 학생이 표적입니다.')
     +'<br><br>원본 '+cur.canvas+' 을 그 크기로 늘려 그립니다.'
     +(blend==='screen'?'<br><br><b>screen 합성에서는 어두운 픽셀이 거의 안 보입니다.</b> 체커 위에서 거슬리던 검은 잔재가 여기서는 이미 안 보일 수 있습니다.':'');
   o.appendChild(n);
@@ -575,12 +797,62 @@ async function save(){
   if(j.ok){const n=document.querySelector('.it.on');if(n&&!n.querySelector('.done')){const d=el('span','done');d.textContent='●';n.appendChild(d)}}
 }
 
+async function publish(){
+  const btn=document.getElementById('pubbtn');
+  if(btn){btn.disabled=true;btn.textContent='올리는 중…'}
+  let j;
+  try{ j=await (await fetch('/api/publish',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pinGame})})).json() }
+  catch(e){ j={ok:false,error:'서버에 못 닿았습니다: '+e.message} }
+  if(btn){btn.disabled=false;btn.textContent='올리기'}
+  const m=el('div','msg '+(j.ok?'ok':'err'));
+  if(j.ok){
+    const v=j.verify||{};
+    const okCdn=v.same===true;
+    m.innerHTML='<b>올렸습니다.</b> '+(j.gifs||[]).length+'개<br>'
+      +(j.log||[]).join(' → ')
+      +(j.game&&j.game.ok
+        ? '<br><b>게임 코드를 '+String(j.sha).slice(0,8)+' 로 못박았습니다.</b> Vercel 배포가 끝나면(1~2분) 반영됩니다.'
+        : (j.game?'<br>⚠ 게임 코드 갱신 실패: '+j.game.error+' — 자산만 올라갔고, @main 은 최대 12시간 낡습니다.':''))
+      +(v.error?'<br>확인 실패: '+v.error
+        : (okCdn?'<br>CDN 확인: 새 파일이 나옵니다 ('+v.cdnLen+'B)'
+                :'<br>⚠ CDN 이 아직 옛 파일을 줍니다 (CDN '+v.cdnLen+'B / 내 PC '+v.localLen+'B)'))
+      +'<br><span style="opacity:.7">'+(j.message||'')+'</span>';
+  } else {
+    m.innerHTML='<b>못 올렸습니다.</b> '+(j.error||'')+((j.log||[]).length?'<br>'+j.log.join(' → '):'');
+  }
+  $('#work').appendChild(m);m.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+// 단축키 — 되돌리기와 저장은 손이 먼저 간다.
+addEventListener('keydown',e=>{
+  const typing=/^(INPUT|TEXTAREA)$/.test((e.target||{}).tagName||'');
+  if(!(e.ctrlKey||e.metaKey)||typing)return;
+  const k=e.key.toLowerCase();
+  if(k==='z'){ e.preventDefault();
+    if(openEd&&ed){ document.getElementById('eu')?.click(); }   // 편집기 안이면 붓질 되돌리기
+    else { const p=undoStack.pop(); if(p){seq=JSON.parse(p);render()} }
+  }
+  if(k==='s'){ e.preventDefault();
+    // 낱장 편집 중이면 '이 낱장에 적용', 아니면 전체 저장. 손이 가는 곳이 다르다.
+    if(openEd){ document.getElementById('eapply')?.click(); }
+    else if(cur&&seq.length){ save(); }
+  }
+});
+
 // ── 큰 편집기 ────────────────────────────────────────────────────────────
-let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[];
+let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[],edZoom=0,edFull=false;
 function editor(){
-  const wrap=el('div','ed');
+  const wrap=el('div','ed'+(edFull?' full':''));
   const h=el('h2');h.innerHTML='낱장 편집 <span class="mono">'+(openEd.src==='old'?'지금':'새')+openEd.i+'</span>';
-  const cls=el('button','close');cls.textContent='닫기';cls.onclick=()=>{openEd=null;render()};h.appendChild(cls);
+  const zl=el('span');zl.className='lbl';zl.style.marginLeft='auto';zl.textContent='확대';h.appendChild(zl);
+  [[0,'자동'],[2,'2배'],[4,'4배'],[6,'6배'],[8,'8배']].forEach(([v,n])=>{
+    const x=el('button');x.textContent=n;x.setAttribute('aria-pressed',String(edZoom===v));
+    x.onclick=()=>{edZoom=v;render()};h.appendChild(x)});
+  const fs=el('button');fs.textContent=edFull?'창으로':'전체화면';fs.setAttribute('aria-pressed',String(edFull));
+  fs.onclick=()=>{edFull=!edFull;render()};h.appendChild(fs);
+  const cls=el('button','close');cls.textContent='닫기';cls.style.marginLeft='0';
+  cls.onclick=()=>{openEd=null;edFull=false;render()};h.appendChild(cls);
   wrap.appendChild(h);
 
   const main=el('div','edmain');
@@ -592,9 +864,14 @@ function editor(){
 
   const T=el('div','tools');
   const tg=el('div','tgrid');
+  // 도구를 바꿀 때마다 render() 를 부르면 편집기가 통째로 다시 만들어지고
+  // 캔버스가 새로 붙느라 화면이 깜빡인다. 단추 상태만 갈아끼운다.
+  const toolBtns=[];
   [['pencil','연필'],['eraser','지우개'],['picker','스포이드'],['bucket','페인트통'],['swap','색바꾸기'],['move','이동']]
-    .forEach(([id,n])=>{const x=el('button');x.textContent=n;x.setAttribute('aria-pressed',String(tool===id));
-      x.onclick=()=>{tool=id;render()};tg.appendChild(x)});
+    .forEach(([id,n])=>{const x=el('button');x.textContent=n;x.dataset.tool=id;
+      x.setAttribute('aria-pressed',String(tool===id));
+      x.onclick=()=>{tool=id;toolBtns.forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===id)))};
+      toolBtns.push(x);tg.appendChild(x)});
   T.appendChild(tg);
 
   const cur=el('div','cur');const box=el('div','box');box.style.background=color;
@@ -613,17 +890,22 @@ function editor(){
   const opts=el('div','cur');
   const ob=el('button');ob.textContent='어니언스킨';ob.setAttribute('aria-pressed',String(onionOn));
   ob.title='앞 장을 파랗게 비쳐 보여줍니다 — 움직임을 보며 손댈 때 씁니다';
-  ob.onclick=()=>{onionOn=!onionOn;render()};opts.appendChild(ob);
-  const ub=el('button');ub.textContent='되돌리기';ub.onclick=()=>{if(!strokes.length)return;
+  ob.onclick=()=>{onionOn=!onionOn;ob.setAttribute('aria-pressed',String(onionOn));
+    const on=document.getElementById('onion');if(on)drawOnion(on);
+    const mk=document.querySelector('.onionmark');
+    if(onionOn&&openEd.i>0&&!mk){const m=el('div','onionmark');m.textContent='앞 장 비침';document.querySelector('.cw').appendChild(m)}
+    if(!onionOn&&mk)mk.remove();
+  };opts.appendChild(ob);
+  const ub=el('button');ub.id='eu';ub.textContent='되돌리기';ub.onclick=()=>{if(!strokes.length)return;
     const l=strokes[strokes.length-1];if(l.t==='p'||l.t==='c'){while(strokes.length&&(strokes[strokes.length-1].t==='p'||strokes[strokes.length-1].t==='c'))strokes.pop()}else strokes.pop();redraw()};
   const rb=el('button');rb.textContent='처음으로';rb.onclick=()=>{strokes=[];redraw()};
   opts.append(ub,rb);T.appendChild(opts);
 
-  const ap=el('button','primary');ap.textContent='이 낱장에 적용';
+  const ap=el('button','primary');ap.id='eapply';ap.textContent='이 낱장에 적용';
   ap.onclick=()=>{const k=K(openEd.src,openEd.i);if(strokes.length)edits[k]=strokes.slice();else delete edits[k];openEd=null;render()};
   T.appendChild(ap);
   const hint=el('div');hint.className='cap';hint.style.textAlign='left';
-  hint.textContent='손댄 자국은 좌표로 저장됩니다. 원본 gif 는 안 바뀝니다.';
+  hint.innerHTML='손댄 자국은 좌표로 저장됩니다. 원본 gif 는 안 바뀝니다.<br><b>Ctrl+Z</b> 붓질 되돌리기 · <b>Ctrl+S</b> 이 낱장에 적용';
   T.appendChild(hint);
   main.appendChild(T);wrap.appendChild(main);
 
@@ -633,7 +915,9 @@ function editor(){
 function mount(cv,on,gr,pw){
   const img=new Image();
   img.onload=()=>{
-    const z=Math.max(2,Math.min(6,Math.floor(460/img.width)));
+    // 자동일 때는 들어갈 만한 크기로, 전체화면이면 화면 높이에 맞춘다.
+    const room=edFull?Math.min(innerWidth-360,innerHeight-220):460;
+    const z=edZoom||Math.max(2,Math.min(10,Math.floor(room/img.width)));
     base={img,z,w:img.width,h:img.height};
     [cv,on,gr].forEach(c=>{c.width=img.width;c.height=img.height;c.style.width=img.width*z+'px';c.style.height=img.height*z+'px'});
     strokes=(edits[K(openEd.src,openEd.i)]||[]).slice();
@@ -692,7 +976,11 @@ async function buildPal(pw){
   const r=await fetch('/api/palette?dir='+encodeURIComponent(cur.dir)+'&kind='+cur.kind+'&src='+openEd.src+'&i='+openEd.i);
   pal=await r.json();pw.innerHTML='';
   pal.forEach(p=>{const b=el('button','sw'+(p.hex===color?' on':''));b.style.background=p.hex;b.title=p.hex+' · '+p.n+'px';
-    b.onclick=()=>{color=p.hex;render()};pw.appendChild(b)});
+    b.onclick=()=>{color=p.hex;
+      pw.querySelectorAll('.sw').forEach(o=>o.classList.remove('on'));b.classList.add('on');
+      const box=document.querySelector('.ed .cur .box');if(box)box.style.background=color;
+      const ci=document.querySelector('.ed .cur input[type=color]');if(ci)ci.value=color;
+    };pw.appendChild(b)});
 }
 const hex2rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
 function bindCanvas(cv){

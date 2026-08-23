@@ -28,6 +28,7 @@ import { readFileSync, existsSync, mkdirSync, copyFileSync, renameSync, rmSync }
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawnSync } from 'child_process';
+import { nextBakeSlot } from './lib/fxgif.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSETS_ROOT = join(__dirname, '..');
@@ -101,13 +102,18 @@ for (const [i, it] of todo.entries()) {
     renameSync(made, alt);
     console.log('    보관 → ' + alt.split(/[\\/]/).pop());
   } else {
+    // 나가는 판을 bakes/ 에 번호를 붙여 남긴다. 마음에 안 들어 다시 구운 판에도
+    // 쓸 만한 낱장이 한두 장은 있어서 나중에 섞게 된다.
+    // 예전에는 `_prev/` 로 밀어 넣었는데 편집기가 읽지도 않고 칸이 하나뿐이라
+    // 두 번 다시 구우면 첫 판이 사라졌다. bakes/ 는 편집기가 줄로 띄운다.
     if (existsSync(target)) {
-      const prev = join(FXD, it.dir, '_prev');
-      mkdirSync(prev, { recursive: true });
-      copyFileSync(target, join(prev, `${it.dir}-${it.step}-fx.gif`));
+      const slot = nextBakeSlot(FXD, it.dir, it.step);
+      mkdirSync(dirname(slot.path), { recursive: true });
+      copyFileSync(target, slot.path);
+      console.log('    보관 → bakes/' + it.step + '-v' + slot.n + '.gif');
     }
     renameSync(made, target);
-    console.log('    교체 → ' + target.split(/[\\/]/).pop() + '  (옛 파일은 _prev/ 에)');
+    console.log('    교체 → ' + target.split(/[\\/]/).pop());
   }
   done.push(it.dir + ' ' + it.step);
 

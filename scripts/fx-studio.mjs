@@ -14,7 +14,7 @@
  *  - 자산이 GitHub 저장소에 살아서 웹앱은 어차피 못 쓴다.
  *
  * 저장하면:
- *  - 옛 파일은 _prev/ 로 복사
+ *  - 옛 판은 bakes/ 에 번호를 붙여 남긴다(편집기 재료 줄로 뜬다)
  *  - 결과물은 게임이 읽는 이름 그대로 덮어씀
  *  - 조리법을 recipe.{종류}.json 으로 같이 남김 (같은 결과를 언제든 다시 만들 수 있게)
  *  - jsDelivr purge 주소를 찍어줌 (덮어쓰면 최대 12시간 옛 파일이 나간다)
@@ -26,7 +26,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, spawnSync } from 'child_process';
 import { PNG } from 'pngjs';
-import { readFrames, encodeGif, applyEdits, fillRatio, paletteOf, listItems, sourcesFor, origPath } from './lib/fxgif.mjs';
+import { readFrames, encodeGif, applyEdits, fillRatio, paletteOf, listItems, sourcesFor, origPath, nextSaveSlot, savePath } from './lib/fxgif.mjs';
 
 // 경로는 전부 이 파일 위치 기준이다. 이동식 SSD라 드라이브 문자가 바뀌고,
 // 어느 폴더에서 실행하든 같게 동작해야 한다.
@@ -155,10 +155,19 @@ function save(body) {
     copyFileSync(target, orig);
   }
 
+  // 나가는 판을 남긴다. 예전에는 `_prev/` 로 갔는데 편집기가 읽지 않는 곳이라
+  // 「예전에 만든 그거」 를 다시 꺼내 쓸 수가 없었다. bakes/ 에 두면 재료 줄로 뜬다.
+  // 똑같은 내용이면 안 쌓는다 — 손 안 대고 저장만 눌러도 파일이 늘면 안 된다.
   if (existsSync(target)) {
-    const prev = join(FXD, dir, '_prev');
-    mkdirSync(prev, { recursive: true });
-    copyFileSync(target, join(prev, `${dir}-${kind}-fx.gif`));
+    const slot = nextSaveSlot(FXD, dir, kind);
+    const same = slot.n > 1 && readFileSync(target).equals(readFileSync(savePath(FXD, dir, kind, slot.n - 1)));
+    if (!same) {
+      mkdirSync(dirname(slot.path), { recursive: true });
+      copyFileSync(target, slot.path);
+      // 조리법도 같이 — 그때 어떻게 만들었는지가 없으면 파일만 남는다
+      const oldRecipe = join(FXD, dir, `recipe.${kind}.json`);
+      if (existsSync(oldRecipe)) copyFileSync(oldRecipe, join(FXD, dir, 'bakes', `recipe-${kind}-save${slot.n}.json`));
+    }
   }
   writeFileSync(target, buf);
 
@@ -199,12 +208,12 @@ function pending() {
   for (const line of st.out.split(/\r?\n/)) {
     if (!line.trim()) continue;
     const p = line.slice(3).replace(/^"|"$/g, '');
-    if (p.includes('/_prev/')) continue;                       // 로컬 백업은 안 올린다
-    // 결과물 · 조리법 · 재료(bakes) 셋을 올린다. 재료가 빠지면 다른 PC 에서
+    // 결과물 · 조리법 · 재료(bakes) 를 올린다. 재료가 빠지면 다른 PC 에서
     // 같은 조리법을 돌려도 다른 그림이 나온다 — 조리법이 재료를 가리키기 때문이다.
+    // bakes 안의 옛 조리법도 같이 올린다. 그림만 남고 만든 법이 없으면 반쪽이다.
     if (/skillFX\/[^/]+\/[^/]+-fx\.gif$/.test(p)
       || /skillFX\/[^/]+\/recipe\.[a-z]+\.json$/.test(p)
-      || /skillFX\/[^/]+\/bakes\/[^/]+\.gif$/.test(p)) files.push(p);
+      || /skillFX\/[^/]+\/bakes\/[^/]+\.(gif|json)$/.test(p)) files.push(p);
   }
   return [...new Set(files)];
 }
@@ -626,7 +635,22 @@ function buildEdited(src,i,done){
   img.onerror=()=>{done&&done()};
   img.src=rawURL(src,i);
 }
-const K=(src,i)=>src+i;
+// 재료 이름과 장 번호를 그냥 붙이면 'b1'+15 와 'b11'+5 가 같은 열쇠가 된다.
+// 구분자를 하나 끼운다. 조리법 파일은 src 와 i 를 따로 담으므로 저장본은 안 깨진다.
+// 재료 이름을 짧게. 'old'/'new' 두 갈래로 손수 나누던 걸 대신한다 —
+// 굽기·저장본이 생긴 뒤로는 그 방식이 전부 «새» 라고 불렀다.
+const shortSrc=id=>{
+  if(id==='old')return '지금';
+  if(id==='live')return '지금';
+  // 이 화면은 통짜 문자열 안에 들어 있다. 역슬래시를 하나만 쓰면 브라우저에
+  // 닿기 전에 먹혀서 /^b(d+)$/ 가 되고, 조용히 아무것도 안 걸린다.
+  let m=/^b(\\d+)$/.exec(id); if(m)return '굽기'+m[1];
+  m=/^s(\\d+)$/.exec(id);     if(m)return '저장'+m[1];
+  if(id==='new')return '새2';
+  m=/^v(\\d+)$/.exec(id);     if(m)return '새'+m[1];
+  return id;
+};
+const K=(src,i)=>src+'#'+i;
 const nEdits=(src,i)=>(edits[K(src,i)]||[]).length;
 
 async function boot(){
@@ -666,7 +690,7 @@ async function load(it){
   const ks=Object.keys(edits);
   let left=ks.length;
   if(!left){render();return}
-  ks.forEach(k=>{const m=/^(old|new|v\d)(\d+)$/.exec(k);
+  ks.forEach(k=>{const m=/^(.+)#(\d+)$/.exec(k);
     if(!m){left--;return}
     buildEdited(m[1],+m[2],()=>{if(--left<=0)render()})});
   if(left<=0)render();
@@ -759,7 +783,7 @@ function seqRow(){
       +(openEd&&openEd.src===s.src&&openEd.i===s.i?' sel':''));
     b.draggable=true;b.dataset.n=n;b.title='눌러서 이 낱장 편집';
     const img=el('img');img.src=furl(s.src,s.i);b.appendChild(img);
-    const m=el('div','m');m.textContent=(s.src==='old'?'지금':'새')+s.i;b.appendChild(m);
+    const m=el('div','m');m.textContent=shortSrc(s.src)+'·'+s.i;b.appendChild(m);
     // 담아 놓고 보다가 손보고 싶어지는 게 자연스러운 순서다. 재료 줄로 되돌아가
     // 같은 낱장을 다시 찾게 만들면 안 된다.
     b.onclick=()=>{openEd={src:s.src,i:s.i};render();
@@ -871,7 +895,7 @@ async function save(){
     body:JSON.stringify({dir:cur.dir,kind:cur.kind,seq:steps,fitMs:fit,leadShort})});
   const j=await r.json();
   const m=el('div','msg '+(j.ok?'ok':'err'));
-  m.innerHTML=j.ok?'저장했습니다 — '+j.frames+'장 · 한 바퀴 '+j.loop_ms+'ms<br>옛 파일은 _prev/ 에. 올린 뒤 CDN 비우기: <code>'+j.purge+'</code>':'실패: '+j.error;
+  m.innerHTML=j.ok?'저장했습니다 — '+j.frames+'장 · 한 바퀴 '+j.loop_ms+'ms<br>옛 판은 재료 줄에 「저장본」 으로 남습니다. 올린 뒤 CDN 비우기: <code>'+j.purge+'</code>':'실패: '+j.error;
   $('#work').appendChild(m);m.scrollIntoView({behavior:'smooth',block:'nearest'});
   if(j.ok){const n=document.querySelector('.it.on');if(n&&!n.querySelector('.done')){const d=el('span','done');d.textContent='●';n.appendChild(d)}}
 }
@@ -923,7 +947,7 @@ addEventListener('keydown',e=>{
 let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[],edZoom=0,edFull=false,mountedKey=null;
 function editor(){
   const wrap=el('div','ed'+(edFull?' full':''));
-  const h=el('h2');h.innerHTML='낱장 편집 <span class="mono">'+(openEd.src==='old'?'지금':'새')+openEd.i+'</span>';
+  const h=el('h2');h.innerHTML='낱장 편집 <span class="mono">'+shortSrc(openEd.src)+'·'+openEd.i+'</span>';
   const zl=el('span');zl.className='lbl';zl.style.marginLeft='auto';zl.textContent='확대';h.appendChild(zl);
   const zBtns=[];
   [[0,'자동'],[2,'2배'],[4,'4배'],[8,'8배'],[12,'12배'],[16,'16배']].forEach(([v,n])=>{

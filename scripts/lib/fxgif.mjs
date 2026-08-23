@@ -174,17 +174,97 @@ export function origPath(fxRoot, dir, kind) {
   return join(fxRoot, dir, 'bakes', `${kind}-orig.gif`);
 }
 
+/**
+ * 구운 것은 **하나도 안 버린다.** 마음에 안 들어 다시 구운 판에도 쓸 만한 낱장이
+ * 한두 장은 있고, 나중에 그것들을 섞게 된다. 예전에는 옛 파일이 `_prev/` 로 밀려났는데
+ * 그 폴더는 편집기가 읽지도 않고, 칸이 하나뿐이라 두 번 다시 구우면 첫 판이 사라졌다.
+ * 이제 굽기 기록은 전부 여기 쌓이고, 편집기 목록에 그대로 줄로 뜬다.
+ */
+export function bakePath(fxRoot, dir, kind, n) {
+  return join(fxRoot, dir, 'bakes', `${kind}-v${n}.gif`);
+}
+
+/** 아직 안 쓴 다음 칸. 이미 있는 번호는 절대 건드리지 않는다. */
+export function nextBakeSlot(fxRoot, dir, kind) {
+  let n = 1;
+  while (existsSync(bakePath(fxRoot, dir, kind, n))) n++;
+  return { n, path: bakePath(fxRoot, dir, kind, n) };
+}
+
+/**
+ * 편집기에서 저장할 때마다 나가는 판을 남기는 자리.
+ * 구운 판(v)과 섞어 만든 판(save)은 성격이 달라 이름을 나눈다 — 목록에서도
+ * 「굽기 3회차」와 「저장본 2회차」로 갈려 보여야 뭘 꺼내는지 안다.
+ */
+export function savePath(fxRoot, dir, kind, n) {
+  return join(fxRoot, dir, 'bakes', `${kind}-save${n}.gif`);
+}
+
+export function nextSaveSlot(fxRoot, dir, kind) {
+  let n = 1;
+  while (existsSync(savePath(fxRoot, dir, kind, n))) n++;
+  return { n, path: savePath(fxRoot, dir, kind, n) };
+}
+
+/**
+ * 폴더를 한 번만 읽고 이름으로 판단한다.
+ *
+ * 이름을 하나씩 짚어 「있냐」 고 묻는 방식이었는데, 굽기 기록이 늘면 그 질문도
+ * 같이 늘어난다. 62개 항목이면 파일 확인이 수천 번이 되고, 이 디스크에서는
+ * 그게 목록이 느려지는 진짜 이유였다(gif 를 푸는 값은 그 10분의 1이다).
+ */
+function listDir(p) {
+  try { return readdirSync(p); } catch { return []; }
+}
+
 export function sourcesFor(fxRoot, dir, kind) {
   const out = [];
-  const orig = origPath(fxRoot, dir, kind);
-  const live = join(fxRoot, dir, `${dir}-${kind}-fx.gif`);
-  if (existsSync(orig)) out.push({ id: 'old', label: '원본', path: orig });
-  else if (existsSync(live)) out.push({ id: 'old', label: '지금 쓰는 것', path: live });
+  const here = new Set(listDir(join(fxRoot, dir)));
+  const inBakes = new Set(listDir(join(fxRoot, dir, 'bakes')));
+
+  const origName = `${kind}-orig.gif`;
+  const liveName = `${dir}-${kind}-fx.gif`;
+  const hasOrig = inBakes.has(origName);
+  const hasLive = here.has(liveName);
+
+  // 'old' 는 이미 저장된 조리법들이 가리키는 이름이라 뜻을 바꾸면 안 된다.
+  if (hasOrig) out.push({ id: 'old', label: '원본', path: origPath(fxRoot, dir, kind) });
+  else if (hasLive) out.push({ id: 'old', label: '지금 쓰는 것', path: join(fxRoot, dir, liveName) });
+
+  // 굽기 기록. 번호가 클수록 최근이다. 'attack' 은 'attacked-v1.gif' 와 안 겹친다
+  // — 종류 뒤에 바로 '-v' 가 와야 하기 때문이다.
+  const re = new RegExp('^' + kind + '-v(\\d+)\\.gif$');
+  [...inBakes].map(f => re.exec(f)).filter(Boolean)
+    .map(m => +m[1]).sort((a, b) => a - b)
+    .forEach(n => out.push({ id: 'b' + n, label: `굽기 ${n}회차`, path: bakePath(fxRoot, dir, kind, n) }));
+
+  // 편집기에서 섞어 만들어 저장했던 판들.
+  const reSave = new RegExp('^' + kind + '-save(\\d+)\\.gif$');
+  [...inBakes].map(f => reSave.exec(f)).filter(Boolean)
+    .map(m => +m[1]).sort((a, b) => a - b)
+    .forEach(n => out.push({ id: 's' + n, label: `저장본 ${n}회차`, path: savePath(fxRoot, dir, kind, n) }));
+
+  // 'old' 가 원본을 가리키고 있으면 지금 쓰는 파일이 목록에서 빠진다.
+  // 다시 굽고 나면 그게 제일 최근 판이라 반드시 보여야 한다.
+  if (hasOrig && hasLive) out.push({ id: 'live', label: '지금 쓰는 것', path: join(fxRoot, dir, liveName) });
+
+  // 예전에 --keep 으로 옆에 쌓아 둔 것들. 옛 조리법이 이 이름을 쓴다.
   for (let v = 2; v <= 9; v++) {
-    const p = join(fxRoot, dir, `${dir}-${kind}-fx-v${v}.gif`);
-    if (existsSync(p)) out.push({ id: v === 2 ? 'new' : 'v' + v, label: `다시 구운 것 v${v}`, path: p });
+    const f = `${dir}-${kind}-fx-v${v}.gif`;
+    if (here.has(f)) out.push({ id: v === 2 ? 'new' : 'v' + v, label: `다시 구운 것 v${v}`, path: join(fxRoot, dir, f) });
   }
   return out;
+}
+
+/**
+ * 크기와 장수만 본다. 픽셀은 안 푼다.
+ *
+ * 목록 화면은 62개 항목 × 재료 여러 줄을 훑는데, 장수를 세겠다고 gif 를 통째로
+ * 풀면 굽기 기록이 쌓일수록 목록이 계속 느려진다. 머리글만 읽으면 그럴 일이 없다.
+ */
+export function probeGif(path) {
+  const r = new GifReader(readFileSync(path));
+  return { w: r.width, h: r.height, n: r.numFrames() };
 }
 
 /** skillFX 폴더를 훑어 편집할 수 있는 항목을 모은다. */
@@ -196,11 +276,11 @@ export function listItems(fxRoot) {
     for (const kind of ['attack', 'attacked']) {
       const srcs = sourcesFor(fxRoot, dir, kind);
       if (!srcs.length) continue;
-      const head = readFrames(srcs[0].path);
+      const head = probeGif(srcs[0].path);
       items.push({
         id: `${dir} ${kind}`, dir, kind,
         canvas: `${head.w}×${head.h}`, w: head.w, h: head.h,
-        sources: srcs.map(s => ({ id: s.id, label: s.label, frames: readFrames(s.path).frames.length })),
+        sources: srcs.map(s => ({ id: s.id, label: s.label, frames: probeGif(s.path).n })),
       });
     }
   }

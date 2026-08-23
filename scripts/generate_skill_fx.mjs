@@ -317,7 +317,7 @@ const CHARACTERS = {
   raichu: {
     spriteId: 26, canvasSize: 128,
     attackAction:  'raichu stands at bottom-left corner of canvas facing right, a thick bolt of yellow lightning discharges from its cheeks and long tail toward the top-right corner and forks as it goes, the top-left area of the canvas stays completely empty, side view',
-    attackedAction:'raichu stands at top-right corner of canvas facing the viewer, a thick bolt of yellow lightning discharges from its cheeks and long tail toward the bottom-left corner, the bolt forks as it streaks lower-left, front view',
+    attackedAction:'raichu stands at top-right corner of canvas facing the viewer, a thick bright yellow and white bolt of lightning discharges from its cheeks toward the bottom-left corner and forks as it goes, every spark is bright yellow, never black or grey, front view',
     hitColor: 0xFFD028FF, hitShape: 'star', elemental: true,
     hitDescription: 'thunderbolt impact, a blinding yellow-white electric burst with thick forked branches tearing outward, pixel art',
     hitAction: 'the bolt lands and forks outward, the branches flash white then fade from the outer tips inward',
@@ -370,7 +370,7 @@ const CHARACTERS = {
   },
   gloom: {
     spriteId: 44, canvasSize: 128,
-    attackAction:  'gloom stands at bottom-left corner of canvas facing right, spits a splash of sizzling purple acid from its mouth arcing toward the top-right corner, acid droplets trail upper-right, side view',
+    attackAction:  'gloom stands at bottom-left corner of canvas facing right and stays visible in every single frame, it spits sizzling purple acid from its mouth that arcs toward the top-right corner, acid droplets are on screen in every frame after the first, side view',
     attackedAction:'gloom stands at top-right corner of canvas facing the viewer, spits a splash of sizzling purple acid from its mouth arcing toward the bottom-left corner, acid droplets trail lower-left, front view',
     hitColor: 0xA24AC8FF, hitShape: 'scatter', elemental: true,
     hitDescription: 'acid splash impact, purple corrosive droplets burst and sizzle where they land, small dissolving bubbles pop, pixel art',
@@ -378,8 +378,8 @@ const CHARACTERS = {
   },
   vileplume: {
     spriteId: 45, canvasSize: 128,
-    attackAction:  'a thick bright yellow-green beam of sunlight shoots from the giant flower on the head of vileplume at the bottom-left corner straight to the top-right corner, the beam is wide and glowing in every frame, vileplume stands facing right, side view',
-    attackedAction:'vileplume stands at top-right corner of canvas facing the viewer, a bright yellow-green beam of stored sunlight fires from the giant flower on its head toward the bottom-left corner, the beam fills the lower-left, front view',
+    attackAction:  'a huge burst of glowing white-yellow sunlight explodes out of the big red flower and floods the whole top-right half of the canvas with bright rays, growing larger each frame, vileplume stands small at the bottom-left corner facing right, side view',
+    attackedAction:'a wide blazing white-yellow beam of sunlight pours out of the big red flower and floods the whole bottom-left half of the canvas, growing brighter each frame, vileplume stands small at the top-right corner facing the viewer, front view',
     hitColor: 0xE4FF52FF, hitShape: 'star', elemental: true,
     hitDescription: 'solar beam impact, a blinding yellow-green light detonation with straight rays shooting outward like a compass rose, pixel art',
     hitAction: 'rays shoot out to full length together, then fade from the tips inward leaving a dimming afterglow',

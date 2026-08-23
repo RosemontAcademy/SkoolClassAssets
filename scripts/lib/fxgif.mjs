@@ -163,18 +163,34 @@ export function compositeInto(dst, src, w, h, dx = 0, dy = 0, blend = 'normal', 
       const tx = x + ox;
       if (tx < 0 || tx >= w) continue;
       const s = (y * w + x) * 4, d = (ty * w + tx) * 4;
-      const a = (src[s + 3] / 255) * opacity;
-      if (a <= 0) continue;
-      for (let c = 0; c < 3; c++) {
-        const sv = src[s + c], dv = dst[d + c];
-        let v;
-        if (blend === 'screen') v = 255 - ((255 - dv) * (255 - sv)) / 255;
-        else if (blend === 'add') v = Math.min(255, dv + sv);
-        else v = sv;
-        dst[d + c] = Math.round(dv + (v - dv) * a);
+      const as = (src[s + 3] / 255) * opacity;
+      if (as <= 0) continue;
+      const ab = dst[d + 3] / 255;
+
+      // 화면(캔버스)이 쓰는 셈 그대로 한다. 색만 섞고 알파를 대충 다루면
+      // **투명한 자리 위에 반투명 층**에서 크게 어긋난다 — 검정과 섞이며
+      // 어두워져서, 편집기에서 고른 것과 게임에 나가는 것이 달라진다(실측 119 차이).
+      let ao, inv;
+      if (blend === 'add') {
+        // 'add' 는 섞는 방식이 아니라 겹치는 방식이다(캔버스의 lighter). 식이 다르다.
+        ao = Math.min(1, as + ab);
+        if (ao <= 0) continue;
+        for (let c = 0; c < 3; c++) {
+          const co = as * (src[s + c] / 255) + ab * (dst[d + c] / 255);
+          dst[d + c] = Math.max(0, Math.min(255, Math.round((co / ao) * 255)));
+        }
+      } else {
+        ao = as + ab * (1 - as);
+        if (ao <= 0) continue;
+        inv = 1 / ao;
+        for (let c = 0; c < 3; c++) {
+          const Cs = src[s + c] / 255, Cb = dst[d + c] / 255;
+          const B = blend === 'screen' ? (Cs + Cb - Cs * Cb) : Cs;
+          const co = as * (1 - ab) * Cs + as * ab * B + (1 - as) * ab * Cb;
+          dst[d + c] = Math.max(0, Math.min(255, Math.round(co * inv * 255)));
+        }
       }
-      // 알파는 어느 방식이든 쌓인다 — 겹친 자리가 비어 보이면 안 된다
-      dst[d + 3] = Math.round(255 - (255 - dst[d + 3]) * (1 - a));
+      dst[d + 3] = Math.round(ao * 255);
     }
   }
 }

@@ -681,9 +681,20 @@ const layURL=L=>isForeign(L)
 const layName=L=>(isForeign(L)?(L.dir.replace(/^\\d+-/,'')+'·'):'')+shortSrc(L.src)+'·'+L.i;
 
 // 만들어 둔 합성본을 다시 쓰기 위한 이름표. 층 하나라도 바뀌면 달라져야 한다.
-const slotSig=s=>JSON.stringify([s.src,s.i,nEdits(s.src,s.i),
+//
+// 손질을 «개수» 로만 세면 안 된다. 획 하나를 지우고 다른 자리에 하나를 그으면
+// 개수가 같아서 이름표가 그대로고, 화면은 예전 합성본을 계속 보여 준다.
+// 실제 손질 내용을 짧게 접어 넣는다.
+function editSig(src,i){
+  const st=edits[K(src,i)];
+  if(!st||!st.length)return '';
+  let h=0;const s=JSON.stringify(st);
+  for(let k=0;k<s.length;k++){h=(h*31+s.charCodeAt(k))|0}
+  return st.length+':'+h;
+}
+const slotSig=s=>JSON.stringify([s.src,s.i,editSig(s.src,s.i),
   (s.over||[]).map(L=>[L.dir||'',L.kind||'',L.src,L.i,L.dx|0,L.dy|0,L.blend||'normal',
-    L.op===undefined?1:L.op,isForeign(L)?0:nEdits(L.src,L.i)])]);
+    L.op===undefined?1:L.op,isForeign(L)?'':editSig(L.src,L.i)])]);
 const compCache={};
 const nLayers=s=>1+((s.over&&s.over.length)||0);
 const slotURL=s=>(s.over&&s.over.length)?(compCache[slotSig(s)]||furl(s.src,s.i)):furl(s.src,s.i);
@@ -832,6 +843,7 @@ function render(){
   pb.title='저장한 것을 커밋·푸시하고, 게임 코드까지 갱신합니다';
   pb.onclick=publish;b.appendChild(pb);
 
+  stripTimers.forEach(clearInterval);stripTimers=[];
   const W=$('#work');W.innerHTML='';
   cur.sources.forEach(s=>W.appendChild(strip(s)));
   extras.forEach(x=>W.appendChild(extraStrip(x)));
@@ -864,7 +876,7 @@ function strip(s){
   const row=el('div','row');
   const box=el('div');const st=el('div','stage');const im=el('img');st.appendChild(im);box.appendChild(st);
   const c=el('div','cap');c.textContent=s.label+' '+s.frames+'장';box.appendChild(c);row.appendChild(box);
-  let k=0;setInterval(()=>{if(!meta[s.id])return;k=(k+1)%s.frames;im.src=furl(s.id,k)},250);
+  let k=0;stripTimers.push(setInterval(()=>{if(!meta[s.id])return;k=(k+1)%s.frames;im.src=furl(s.id,k)},250));
   const sp=el('div','strip');
   for(let i=0;i<s.frames;i++){
     const f=meta[s.id].fills[i],blank=i>0&&f<meta[s.id].fills[0]*0.25;
@@ -1044,10 +1056,12 @@ function layersPanel(n){
       const x=el('button');x.textContent=t;x.title=d>0?'위로':'아래로';
       x.onclick=()=>{const j=k+d;
         if(j<0){ // 바닥보다 더 아래로 — 바닥과 자리를 바꾼다
-          push();const b={src:s.src,i:s.i,dx:0,dy:0,blend:'normal',op:1};
+          // 막을 거면 **건드리기 전에** 막아야 한다. 예전에는 바닥을 먼저 바꿔 놓고
+          // 알림창을 띄워서, «못 내립니다» 를 읽는 사이 바닥이 이미 망가져 있었다.
+          if(isForeign(L)){alert('다른 종에서 가져온 층은 바닥으로 못 내립니다.\\n캔버스 기준이 흔들립니다.');return}
+          push();
+          const b={src:s.src,i:s.i,dx:0,dy:0,blend:'normal',op:1};
           s.src=L.src;s.i=L.i;
-          if(L.dir||L.kind){/* 다른 종은 바닥이 될 수 없다 — 캔버스 기준이 흔들린다 */
-            alert('다른 종에서 가져온 층은 바닥으로 못 내립니다.');return}
           s.over[k]=b;render();return}
         if(j>=s.over.length)return;
         push();[s.over[k],s.over[j]]=[s.over[j],s.over[k]];render()};
@@ -1074,6 +1088,8 @@ function layersPanel(n){
 }
 
 let drag=null,mark=null,selSlot=null;
+// 재료 줄의 미리보기 타이머. 다시 그릴 때 옛 것을 안 끄면 계속 쌓인다.
+let stripTimers=[];
 function clearMark(){if(mark&&mark.parentNode)mark.remove();mark=null}
 function markAt(box,x){
   if(!mark){mark=el('div','mark')}

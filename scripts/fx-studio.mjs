@@ -995,25 +995,36 @@ function render(){
   b.appendChild(takeAll);
   const cl=el('button');cl.textContent='비우기';cl.onclick=()=>{push();seq=[];render()};b.appendChild(cl);
   b.appendChild(gap());
-  b.appendChild(lab('배경'));
-  [['체커',''],['어두움','dark'],['밝음','light'],['회색','grey'],['없음','none']].forEach(([n,v])=>{
-    const x=el('button');x.textContent=n;x.setAttribute('aria-pressed',String((document.body.dataset.bg||'')===v));
-    x.onclick=()=>{if(v)document.body.dataset.bg=v;else delete document.body.dataset.bg;render()};b.appendChild(x)});
-  b.appendChild(lab('크기'));
-  [1,1.5,2].forEach(v=>{const x=el('button');x.textContent=v+'배';x.setAttribute('aria-pressed',String(zoom===v));
-    x.onclick=()=>{zoom=v;document.documentElement.style.setProperty('--z',v);render()};b.appendChild(x)});
+  // 자주 안 바꾸는 값들은 고르는 칸으로 접는다 — 단추로 늘어놓으면 도구줄이 스무 개가 되어
+  // 정작 손이 가는 「저장」 이 어디 있는지 안 보인다(2026-08-25 원장님).
+  const pick=(label,title,opts,cur0,fn)=>{
+    b.appendChild(lab(label));
+    const sl=el('select');sl.title=title;
+    opts.forEach(([n,v])=>{const o=el('option');o.value=String(v);o.textContent=n;sl.appendChild(o)});
+    sl.value=String(cur0);
+    sl.onchange=()=>fn(sl.value);
+    b.appendChild(sl);
+  };
+  pick('배경','낱장 뒤에 깔 바탕 — 밝은 이펙트는 어두움에서 잘 보입니다',
+    [['체커',''],['어두움','dark'],['밝음','light'],['회색','grey'],['없음','none']],
+    (document.body.dataset.bg||''),
+    v=>{if(v)document.body.dataset.bg=v;else delete document.body.dataset.bg;render()});
+  pick('보기 크기','낱장을 화면에 몇 배로 크게 보여줄지',
+    [['1배',1],['1.5배',1.5],['2배',2]], zoom,
+    v=>{zoom=Number(v);document.documentElement.style.setProperty('--z',zoom);render()});
   b.appendChild(gap());
-  b.appendChild(lab('창'));
-  [1500,2000,3000].forEach(v=>{const x=el('button');x.textContent=(v/1000)+'초';x.setAttribute('aria-pressed',String(fit===v));
-    x.onclick=()=>{fit=v;render()};b.appendChild(x)});
+  pick('한 바퀴','이펙트 한 바퀴에 쓸 시간 — 장수에 맞춰 장당 시간이 정해집니다',
+    [['1.5초',1500],['2초',2000],['3초',3000]], fit,
+    v=>{fit=Number(v);render()});
   const ls=el('button');ls.textContent='첫 장 짧게';ls.setAttribute('aria-pressed',String(leadShort));
   ls.title='0번 장은 이펙트가 없는 맨 스프라이트라 짧게 주는 게 자연스럽습니다';
   ls.onclick=()=>{leadShort=!leadShort;render()};b.appendChild(ls);
-  const ud=el('button');ud.textContent='되돌리기';ud.disabled=!undoStack.length;
-  ud.title='Ctrl+Z — 붓질까지 포함해 마지막 한 가지를 되돌립니다';
+  b.appendChild(gap());
+  const ud=el('button');ud.textContent='↶';ud.disabled=!undoStack.length;
+  ud.title='되돌리기 (Ctrl+Z) — 붓질까지 포함해 마지막 한 가지를 되돌립니다';
   ud.onclick=undo;b.appendChild(ud);
-  const rd2=el('button');rd2.textContent='다시하기';rd2.disabled=!redoStack.length;
-  rd2.title='Ctrl+Shift+Z — 되돌린 것을 도로 합니다';
+  const rd2=el('button');rd2.textContent='↷';rd2.disabled=!redoStack.length;
+  rd2.title='다시하기 (Ctrl+Shift+Z) — 되돌린 것을 도로 합니다';
   rd2.onclick=redo;b.appendChild(rd2);
   // 단추는 「저장」 하나다. 올리는 건 손을 놓으면 알아서 한 번에 나간다 —
   // 아래 상태줄(#pubbar)이 언제 나가는지 말해 주고, 거기서 앞당기거나 미룰 수 있다.

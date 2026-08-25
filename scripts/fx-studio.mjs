@@ -614,7 +614,13 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .onionmark{position:absolute;right:12px;top:12px;font-size:10px;font-weight:800;color:#7aa7ff;
     background:rgba(0,0,0,.55);border-radius:5px;padding:1px 6px;pointer-events:none}
   #grid{position:absolute;left:0;top:0;pointer-events:none;border-radius:4px}
-  .tools{display:flex;flex-direction:column;gap:8px;min-width:210px}
+  /* 그을 자리에 뜨는 붓 크기 윤곽. 검은 그림 위에서도 보이게 두 겹으로 두른다. */
+  .brushcur{position:absolute;transform:translate(-50%,-50%);border:1px solid #fff;
+    box-shadow:0 0 0 1px rgba(0,0,0,.7);border-radius:50%;pointer-events:none;display:none;z-index:5}
+  /* 창 모드로 돌아가도 도구가 그림 아래로 접히지 않게. 그림 칸이 자기 안에서 스크롤한다. */
+  .ed:not(.full) .edmain{flex-wrap:nowrap}
+  .ed:not(.full) .cw{flex:1;min-width:0;max-height:70vh}
+  .tools{display:flex;flex-direction:column;gap:8px;min-width:210px;flex:0 0 auto}
   .tgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
   .tgrid button{padding:7px 4px;font-size:12px}
   .pal{display:flex;flex-wrap:wrap;gap:4px;max-width:230px}
@@ -930,7 +936,9 @@ function strip(s){
     b.draggable=true;
     const img=el('img');img.src=furl(s.id,i);b.appendChild(img);
     const m=el('div','m');m.textContent=i+' · '+f+'%'+(blank?' 빔':'');b.appendChild(m);
-    b.onclick=()=>{openEd={src:s.id,i};render();setTimeout(()=>document.querySelector('.ed').scrollIntoView({behavior:'smooth',block:'nearest'}),30)};
+    b.onclick=()=>{const c=commitStrokes();openEd={src:s.id,i};mountedKey=null;
+      const go=()=>{render();setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
+      if(c)buildEdited(c.src,c.i,go);else go()};
     const a=el('button','add');a.textContent='＋';a.title='만든 것에 담기';
     a.onclick=e=>{e.stopPropagation();push();seq.push({src:s.id,i});render()};b.appendChild(a);
     b.addEventListener('dragstart',e=>{drag={kind:'add',src:s.id,i};b.classList.add('dragging');e.dataTransfer.effectAllowed='copy'});
@@ -970,8 +978,9 @@ function seqRow(){
       selSlot=n;drag=null;render()});
     // 담아 놓고 보다가 손보고 싶어지는 게 자연스러운 순서다. 재료 줄로 되돌아가
     // 같은 낱장을 다시 찾게 만들면 안 된다.
-    b.onclick=()=>{openEd={src:s.src,i:s.i};render();
-      setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
+    b.onclick=()=>{const c=commitStrokes();openEd={src:s.src,i:s.i};mountedKey=null;
+      const go=()=>{render();setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
+      if(c)buildEdited(c.src,c.i,go);else go()};
     const ops=el('div','ops');
     [['✎','edit'],['層','lay'],['◀',-1],['▶',1],['×',0]].forEach(([t,d])=>{
       const x=el('button',d===0?'x':'');x.textContent=t;
@@ -1214,6 +1223,7 @@ function play(){
   step();
 }
 async function save(){
+  commitStrokes();          // 그리다 만 붓질도 저장에 담는다 — 「적용」을 잊어도 잃지 않게
   const steps=seq.map(s=>({src:s.src,i:s.i,erase:edits[K(s.src,s.i)]||[],
     over:(s.over||[]).map(L=>({dir:L.dir,kind:L.kind,src:L.src,i:L.i,dx:L.dx|0,dy:L.dy|0,
       blend:L.blend||'normal',op:L.op===undefined?1:L.op,
@@ -1270,23 +1280,64 @@ addEventListener('keydown',e=>{
   }
 });
 
+// 도구 단축키 — Aseprite 와 같은 글쇠다. 손이 이미 그리로 간다.
+const TOOLKEY={b:'pencil',e:'eraser',i:'picker',g:'bucket',v:'move',n:'swap'};
+const typingNow=e=>/^(INPUT|TEXTAREA)$/.test((e.target||{}).tagName||'');
+addEventListener('keydown',e=>{
+  if(!openEd||e.ctrlKey||e.metaKey||e.altKey||typingNow(e))return;
+  if(e.code==='Space'){ e.preventDefault();
+    if(!spaceDown){spaceDown=true;const c=document.getElementById('cv');if(c)c.style.cursor='grab'} return; }
+  const k=e.key.toLowerCase();
+  if(TOOLKEY[k]){e.preventDefault();setTool(TOOLKEY[k]);return}
+  if(k==='['){e.preventDefault();setBrush(brush-1)}
+  if(k===']'){e.preventDefault();setBrush(brush+1)}
+});
+addEventListener('keyup',e=>{
+  if(e.code!=='Space')return;
+  spaceDown=false;const c=document.getElementById('cv');if(c&&c.style.cursor!=='grabbing')c.style.cursor='crosshair';
+});
+
 // ── 큰 편집기 ────────────────────────────────────────────────────────────
-let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[],edZoom=0,edFull=false,mountedKey=null;
+// 편집은 전용 작업대에서 한다(Aseprite·Canva 와 같다). 예전 기본이던 «창 모드» 는
+// 그림 칸과 도구 칸이 한 줄에 안 들어가면 도구가 그림 «아래» 로 접혀서, 8배만 넘겨도
+// 도구가 화면 밖(실측 y=1648, 창 높이 905)으로 사라졌다. 「창으로」 는 남겨 둔다.
+let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[],edZoom=0,edFull=true,mountedKey=null,spaceDown=false;
+/**
+ * 그리던 붓질을 «편집기를 벗어나는 순간» 그 자리에서 적용한다.
+ *
+ * 예전에는 「이 낱장에 적용」을 눌러야만 남았다. 안 누르고 닫거나, 다른 낱장을
+ * 누르거나, 그냥 저장하면 방금 그린 것이 **아무 말 없이 사라졌다** — 그런데
+ * 저장 단추는 «저장했습니다» 라고 말해서 됐다고 믿게 된다(2026-08-25 원장님).
+ * 캔바가 그렇듯 그린 건 그냥 남는 게 맞다. 「적용」 단추는 그대로 두되,
+ * 안 눌러도 잃지 않는다. 되돌리기 역사에도 쌓으므로 Ctrl+Z 로 되돌릴 수 있다.
+ */
+function commitStrokes(){
+  if(!openEd)return null;
+  const k=K(openEd.src,openEd.i);
+  if(mountedKey!==k)return null;              // 캔버스가 아직 안 붙었으면 붓질도 없다
+  const now=edits[k]||[];
+  if(JSON.stringify(now)===JSON.stringify(strokes))return null;
+  push();
+  if(strokes.length)edits[k]=strokes.slice();else delete edits[k];
+  return {src:openEd.src,i:openEd.i};
+}
 function editor(){
   const wrap=el('div','ed'+(edFull?' full':''));
   const h=el('h2');h.innerHTML='낱장 편집 <span class="mono">'+shortSrc(openEd.src)+'·'+openEd.i+'</span>';
   const zl=el('span');zl.className='lbl';zl.style.marginLeft='auto';zl.textContent='확대';h.appendChild(zl);
   const zBtns=[];
-  [[0,'자동'],[2,'2배'],[4,'4배'],[8,'8배'],[12,'12배'],[16,'16배']].forEach(([v,n])=>{
+  [[0,'맞추기'],[2,'2배'],[4,'4배'],[8,'8배'],[12,'12배'],[16,'16배']].forEach(([v,n])=>{
     const x=el('button');x.textContent=n;x.dataset.z=v;x.setAttribute('aria-pressed',String(edZoom===v));
-    x.onclick=()=>{setZoom(v||autoZoom());edZoom=v;
+    // 맞추기는 그림을 칸 한가운데 놓고, 배율 단추는 «보던 자리» 를 붙잡는다.
+    x.onclick=()=>{v?setZoomKeep(v):fitZoom();edZoom=v;
       zBtns.forEach(t=>t.setAttribute('aria-pressed',String(+t.dataset.z===v)))};
     zBtns.push(x);h.appendChild(x)});
   const zl2=el('span');zl2.id='zlab';zl2.className='lbl';zl2.style.minWidth='34px';h.appendChild(zl2);
   const fs=el('button');fs.textContent=edFull?'창으로':'전체화면';fs.setAttribute('aria-pressed',String(edFull));
   fs.onclick=()=>{edFull=!edFull;render()};h.appendChild(fs);
   const cls=el('button','close');cls.textContent='닫기';cls.style.marginLeft='0';
-  cls.onclick=()=>{openEd=null;edFull=false;mountedKey=null;render()};h.appendChild(cls);
+  cls.onclick=()=>{const c=commitStrokes();openEd=null;mountedKey=null;
+    if(c)buildEdited(c.src,c.i,()=>render());else render()};h.appendChild(cls);
   wrap.appendChild(h);
 
   const main=el('div','edmain');
@@ -1305,15 +1356,16 @@ function editor(){
   [['pencil','연필'],['eraser','지우개'],['picker','스포이드'],['bucket','페인트통'],['swap','색바꾸기'],['move','이동']]
     .forEach(([id,n])=>{const x=el('button');x.textContent=n;x.dataset.tool=id;
       x.setAttribute('aria-pressed',String(tool===id));
-      x.onclick=()=>{tool=id;toolBtns.forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===id)))};
+      x.onclick=()=>setTool(id);
       toolBtns.push(x);tg.appendChild(x)});
   T.appendChild(tg);
 
   const cur=el('div','cur');const box=el('div','box');box.style.background=color;
   const ci=el('input');ci.type='color';ci.value=color;ci.oninput=e=>{color=e.target.value;box.style.background=color};
   cur.append(box,ci);const bl=el('span');bl.className='mono';bl.textContent='굵기';cur.appendChild(bl);
-  const bi=el('input');bi.type='range';bi.min=1;bi.max=24;bi.value=brush;bi.style.width='90px';
-  bi.oninput=e=>{brush=+e.target.value;bs.textContent=brush};const bs=el('span');bs.className='mono';bs.textContent=brush;
+  const bi=el('input');bi.id='brushrange';bi.type='range';bi.min=1;bi.max=24;bi.value=brush;bi.style.width='90px';
+  bi.oninput=e=>{brush=+e.target.value;bs.textContent=brush};
+  const bs=el('span');bs.id='brushnum';bs.className='mono';bs.textContent=brush;
   cur.append(bi,bs);T.appendChild(cur);
 
   const tl=el('div','cur');tl.innerHTML='<span class="mono">비슷한 색 허용</span>';
@@ -1340,7 +1392,7 @@ function editor(){
   const rb=el('button');rb.textContent='처음으로';rb.onclick=()=>{push();strokes=[];redraw()};
   opts.append(ub,rb);T.appendChild(opts);
 
-  const ap=el('button','primary');ap.id='eapply';ap.textContent='이 낱장에 적용';
+  const ap=el('button','primary');ap.id='eapply';ap.textContent='적용하고 닫기';
   ap.onclick=()=>{
     const k=K(openEd.src,openEd.i), src=openEd.src, i=openEd.i;
     push();                              // 적용도 되돌릴 수 있어야 한다
@@ -1351,18 +1403,35 @@ function editor(){
   T.appendChild(ap);
   const hint=el('div');hint.className='cap';hint.style.textAlign='left';
   hint.innerHTML='손댄 자국은 좌표로 저장됩니다. 원본 gif 는 안 바뀝니다.<br>'
-    +'<b>휠</b> 확대·축소 (커서 지점 기준) · 커지면 칸 안에서 끌어 넘기기<br>'
-    +'<b>Ctrl+Z</b> 붓질 되돌리기 · <b>Ctrl+S</b> 이 낱장에 적용';
+    +'<b>휠</b> 확대·축소(커서 지점 기준) · <b>스페이스+끌기</b> 또는 <b>가운데 버튼</b> 으로 화면 밀기<br>'
+    +'<b>B</b> 연필 <b>E</b> 지우개 <b>I</b> 스포이드 <b>G</b> 페인트통 <b>V</b> 이동 · <b>[ ]</b> 붓 굵기<br>'
+    +'<b>Ctrl+Z</b> 되돌리기 · 그린 것은 닫아도 저장됩니다';
   T.appendChild(hint);
   main.appendChild(T);wrap.appendChild(main);
 
   setTimeout(()=>mount(cv,on,gr,pw),0);
   return wrap;
 }
+/** 도구 바꾸기 — 단추와 단축키가 같은 자리를 쓴다. render() 를 부르면 캔버스가
+    새로 붙어 그리던 게 끊기므로 단추 상태만 갈아끼운다. */
+function setTool(id){
+  tool=id;
+  document.querySelectorAll('.tgrid button[data-tool]').forEach(b=>
+    b.setAttribute('aria-pressed',String(b.dataset.tool===id)));
+}
+/** 붓 굵기 — 대괄호 글쇠와 슬라이더가 같은 자리를 쓴다. */
+function setBrush(v){
+  brush=Math.max(1,Math.min(24,v));
+  const bi=document.getElementById('brushrange');if(bi)bi.value=brush;
+  const bs=document.getElementById('brushnum');if(bs)bs.textContent=brush;
+}
 function autoZoom(){
   if(!base)return 4;
-  const room=edFull?Math.min(innerWidth-380,innerHeight-170):460;
-  return Math.max(2,Math.min(16,Math.floor(room/base.w)));
+  // 어림값이 아니라 지금 그 칸의 실제 크기로 잰다. 가로만 보면 세로로 넘친다.
+  const sc=document.querySelector('.ed .cw');
+  const rw=sc&&sc.clientWidth?sc.clientWidth-18:(edFull?innerWidth-400:460);
+  const rh=sc&&sc.clientHeight?sc.clientHeight-18:(edFull?innerHeight-190:460);
+  return Math.max(1,Math.min(32,Math.floor(Math.min(rw/base.w,rh/base.h))));
 }
 /** 배율만 갈아끼운다 — render() 를 부르면 캔버스가 새로 붙어 그리던 게 끊긴다. */
 function setZoom(z){
@@ -1374,6 +1443,27 @@ function setZoom(z){
   const gr=document.getElementById('grid');if(gr)drawGrid(gr,z);
   const lab=document.getElementById('zlab');if(lab)lab.textContent=z+'배';
 }
+/**
+ * 확대·축소하면서 «보던 자리» 를 붙잡는다.
+ * 안 그러면 16배로 키우는 순간 그림 왼쪽 위 귀퉁이가 잡히는데, 이펙트 그림은
+ * 캐릭터가 아래쪽에 있어서 빈 체커만 보인다(실측). 그럼 다시 스크롤막대를 잡고
+ * 찾아 내려가야 한다.
+ */
+function setZoomKeep(z){
+  const sc=document.querySelector('.ed .cw');
+  if(!sc||!base){setZoom(z);return}
+  const before=base.z;
+  const cx=(sc.scrollLeft+sc.clientWidth/2)/before, cy=(sc.scrollTop+sc.clientHeight/2)/before;
+  setZoom(z);
+  sc.scrollLeft=cx*base.z-sc.clientWidth/2;
+  sc.scrollTop=cy*base.z-sc.clientHeight/2;
+}
+/** 칸에 딱 맞게 줄이고 한가운데 놓는다 (Aseprite 의 «화면에 맞추기»). */
+function fitZoom(){
+  setZoom(autoZoom());
+  const sc=document.querySelector('.ed .cw');
+  if(sc&&base){sc.scrollLeft=(base.w*base.z-sc.clientWidth)/2;sc.scrollTop=(base.h*base.z-sc.clientHeight)/2}
+}
 function mount(cv,on,gr,pw){
   const img=new Image();
   img.onload=()=>{
@@ -1381,6 +1471,9 @@ function mount(cv,on,gr,pw){
     const z=edZoom||autoZoom();
     [cv,on,gr].forEach(c=>{c.width=img.width;c.height=img.height});
     setZoom(z);
+    // 왼쪽 위 귀퉁이는 대개 비어 있다 — 처음부터 그림 한가운데를 보여준다.
+    const sc0=cv.closest('.cw');
+    if(sc0){sc0.scrollLeft=(img.width*base.z-sc0.clientWidth)/2;sc0.scrollTop=(img.height*base.z-sc0.clientHeight)/2}
     // 같은 낱장을 다시 그리는 것뿐이면(전체화면 전환 등) 하던 붓질을 이어간다.
     // 여기서 무조건 저장본을 다시 읽으면 아직 '적용' 안 한 작업이 조용히 사라진다.
     const k=K(openEd.src,openEd.i);
@@ -1473,7 +1566,24 @@ function bindCanvas(cv){
   },{passive:false});
   const pos=e=>{const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)/base.z,y:(e.clientY-r.top)/base.z}};
   const rd=v=>Math.round(v*10)/10;
+  // ── 화면 밀기 ────────────────────────────────────────────────────────────
+  // 휠은 확대에 뺏겨 있고 캔버스 위에서 끌면 그림이 그려진다. 그래서 예전에는 확대한
+  // 그림을 옮길 방법이 얇은 스크롤막대뿐이었다. 스페이스 누른 채 끌기(또는 가운데
+  // 버튼)는 Aseprite·Canva 가 같이 쓰는 손이다.
+  const scBox=cv.closest('.cw');
+  let pan=null;
+  const stopPan=()=>{ if(!pan)return; pan=null; cv.style.cursor=spaceDown?'grab':'crosshair'; };
+  addEventListener('pointermove',e=>{ if(!pan||!scBox)return;
+    scBox.scrollLeft=pan.l-(e.clientX-pan.x); scBox.scrollTop=pan.t-(e.clientY-pan.y); });
+  addEventListener('pointerup',stopPan);
+  addEventListener('pointercancel',stopPan);
+
   cv.onpointerdown=e=>{
+    if((spaceDown||e.button===1)&&scBox){          // 밀기가 그리기보다 먼저다
+      e.preventDefault();cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing';
+      pan={x:e.clientX,y:e.clientY,l:scBox.scrollLeft,t:scBox.scrollTop};return;
+    }
+    if(e.button!==0)return;                        // 오른쪽·가운데 버튼으로는 안 그린다
     cv.setPointerCapture(e.pointerId);const p=pos(e);
     if(tool==='picker'){const c=ctxOf();const d=c.getImageData(Math.floor(p.x),Math.floor(p.y),1,1).data;
       color='#'+[d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,'0')).join('');
@@ -1487,6 +1597,18 @@ function bindCanvas(cv){
     if(tool==='move'){last=p;painting=true;return}
     painting=true;stroke(p);
   };
+  // 굵기를 숫자로만 두면 그어 봐야 안다. 그을 자리에 동그라미를 띄운다.
+  const bcur=document.createElement('div');bcur.className='brushcur';
+  cv.parentNode.appendChild(bcur);
+  const moveBrushCur=e=>{
+    if(!base||(tool!=='pencil'&&tool!=='eraser')){bcur.style.display='none';return}
+    const p=pos(e),d=Math.max(2,brush*base.z);
+    bcur.style.display='block';bcur.style.width=d+'px';bcur.style.height=d+'px';
+    bcur.style.left=(p.x*base.z)+'px';bcur.style.top=(p.y*base.z)+'px';
+  };
+  cv.addEventListener('pointermove',moveBrushCur);
+  cv.addEventListener('pointerleave',()=>{bcur.style.display='none'});
+
   cv.onpointermove=e=>{if(!painting)return;const p=pos(e);
     if(tool==='move'){const dx=Math.round(p.x-last.x),dy=Math.round(p.y-last.y);
       if(dx||dy){strokes.push({t:'shift',dx,dy});last=p;redraw()}return}

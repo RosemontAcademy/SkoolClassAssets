@@ -1133,6 +1133,18 @@ function strip(s){
 function copySlot(s){
   return { src:s.src, i:s.i, over:(s.over||[]).map(L=>Object.assign({},L)) };
 }
+/**
+ * 칸을 하나 더 만든다. 손질까지 «베껴» 새 번호에 붙인다 —
+ * 복제인데 손질이 안 따라오면 화면에서 본 것과 다른 게 생긴다(2026-08-25 실측).
+ * 베낀 뒤에는 서로 남남이라 한쪽만 고쳐도 다른 쪽은 그대로다.
+ */
+function dupSlot(s){
+  const c=copySlot(s);
+  c.uid=newUid();
+  const e=slotEdits(s);
+  if(e.length)edits['slot:'+c.uid]=e.map(x=>JSON.parse(JSON.stringify(x)));
+  return c;
+}
 function seqRow(){
   const row=el('div','row seq');
   const box=el('div');const st=el('div','stage');const im=el('img');im.id='seqimg';st.appendChild(im);box.appendChild(st);
@@ -1175,7 +1187,7 @@ function seqRow(){
       x.onclick=e=>{e.stopPropagation();
         if(d==='edit'){b.onclick();return}
         if(d==='lay'){selSlot=(selSlot===n?null:n);render();return}
-        if(d==='dup'){push();seq.splice(n+1,0,copySlot(seq[n]));selSlot=null;render();return}
+        if(d==='dup'){push();seq.splice(n+1,0,dupSlot(seq[n]));selSlot=null;render();return}
         push();
         if(d===0)seq.splice(n,1);
         else{const j=n+d;if(j<0||j>=seq.length)return;[seq[n],seq[j]]=[seq[j],seq[n]]}
@@ -1508,7 +1520,9 @@ addEventListener('keydown',e=>{
     // 글자를 고르고 있으면 그건 진짜 복사다 — 뺏지 않는다.
     if(String(getSelection()||'').length) return;
     if(openEd&&sel){ e.preventDefault(); selClip=Object.assign({},sel); toast('고른 곳을 복사했습니다 — Ctrl+V 로 붙입니다'); return; }
-    if(selSlot!==null&&seq[selSlot]){ e.preventDefault(); clip=copySlot(seq[selSlot]); toast('칸을 복사했습니다 — Ctrl+V 로 붙입니다'); }
+    if(selSlot!==null&&seq[selSlot]){ e.preventDefault();
+      clip=copySlot(seq[selSlot]); clip._edits=slotEdits(seq[selSlot]).map(x=>JSON.parse(JSON.stringify(x)));
+      toast('칸을 복사했습니다 — Ctrl+V 로 붙입니다'); }
     else if(openEd){ e.preventDefault(); clip={src:openEd.src,i:openEd.i,over:[]}; toast('이 낱장을 복사했습니다 — Ctrl+V 로 붙입니다'); }
     return;
   }
@@ -1525,7 +1539,9 @@ addEventListener('keydown',e=>{
     if(!clip) return;
     e.preventDefault(); push();
     const at = selSlot!==null ? selSlot+1 : seq.length;
-    seq.splice(at,0,copySlot(clip));
+    const c=copySlot(clip); c.uid=newUid();
+    if(clip._edits&&clip._edits.length)edits['slot:'+c.uid]=clip._edits.map(x=>JSON.parse(JSON.stringify(x)));
+    seq.splice(at,0,c);
     selSlot=at; render();
     toast('붙였습니다');
     return;

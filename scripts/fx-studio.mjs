@@ -915,13 +915,27 @@ function ensureLayers(done){
   let left=need.length;
   need.forEach(L=>buildEdited(layKey(L),null,0,()=>{if(!--left)done()},{w:cur.w,h:cur.h}));
 }
+/**
+ * 칸 미리보기 그림을 챙긴다.
+ *
+ * 「모든 장에 한 번에」 는 편집기를 안 거치고 다른 칸의 손질 줄에 바로 얹는다. 그러면
+ * 손질은 있는데 그 칸의 미리보기가 없어서 화면에는 «안 바뀐 것» 처럼 보인다 — 그런데
+ * 저장하면 전부 바뀐다(실측: 「굽기 확인」이 갈림 6장으로 잡았다).
+ * 화면이 낡은 쪽이므로 여기서 다시 굽는다.
+ */
+function ensureEdited(done){
+  const need=seq.filter(s=>{const k=slotKey(s);return (edits[k]||[]).length&&!editedCache[k]});
+  if(!need.length){done();return}
+  let left=need.length;
+  need.forEach(s=>buildEdited(slotKey(s),s.src,s.i,()=>{if(!--left)done()}));
+}
 function ensureComposites(done){
-  ensureLayers(()=>{
+  ensureEdited(()=>ensureLayers(()=>{
     const need=seq.filter(s=>s.over&&s.over.length&&!compCache[slotSig(s)]);
     if(!need.length){done();return}
     let left=need.length;
     need.forEach(s=>buildComposite(s,()=>{if(!--left)done()}));
-  });
+  }));
 }
 function buildEdited(k,src,i,done,blankWH){
   const st=edits[k];
@@ -1026,19 +1040,33 @@ async function load(it){
   // 조리법 파일은 칸마다 제 손질을 담고 있다. 읽을 때도 칸에 붙여야 갈라진 채로 살아난다.
   if(r&&r.steps){
     seq=r.steps.map(s=>({src:s.src,i:s.i,uid:newUid(),over:(s.over||[]).map(L=>Object.assign({},L))}));
-    r.steps.forEach((s,n)=>{if(s.erase&&s.erase.length)edits['slot:'+seq[n].uid]=s.erase});
+    r.steps.forEach((s,n)=>{
+      if(s.erase&&s.erase.length)edits['slot:'+seq[n].uid]=s.erase;
+      // 그린 층의 손질도 제자리에 도로 붙인다. 안 붙이면 층은 살아나는데 «빈 채로»
+      // 살아나고, 그 상태로 한 번만 더 저장하면 그린 것이 조용히 사라진다.
+      (s.over||[]).forEach((L,k)=>{
+        const T=seq[n].over[k];
+        if(T&&isBlank(T)&&L.erase&&L.erase.length)edits[layKey(T)]=L.erase;
+      });
+    });
   }
   else seq=meta.old.fills.map((_,i)=>({src:'old',i,uid:newUid()}));
   undoStack=[];redoStack=[];                     // 다른 종의 순서로 되돌아가면 안 된다
   Object.keys(editedCache).forEach(k=>delete editedCache[k]);
   rebuildEdited(()=>render());
 }
+let reFixing=false;   // 미리보기를 다시 굽는 중 — 여기서 맴돌지 않게
 function render(){
   stampUids();
   // 층을 얹은 칸은 합성본이 있어야 그릴 수 있다. 없으면 만들고 다시 들어온다 —
   // 만들어 두면 두 번째에는 이 자리를 그냥 지나간다.
-  if(seq.some(s=>s.over&&s.over.length&&!compCache[slotSig(s)])){
-    ensureComposites(()=>render());return;
+  // 미리보기가 낡았으면 먼저 다시 굽고 들어온다. 한 번만 되돌아온다 —
+  // 못 구운 게 있어도 화면은 그려야 하지, 여기서 맴돌면 안 된다.
+  const staleEd=seq.some(s=>{const k=slotKey(s);return (edits[k]||[]).length&&!editedCache[k]});
+  const staleComp=seq.some(s=>s.over&&s.over.length&&!compCache[slotSig(s)]);
+  if((staleEd||staleComp)&&!reFixing){
+    reFixing=true;
+    ensureComposites(()=>{reFixing=false;render()});return;
   }
   const b=$('#bar');b.innerHTML='';
   const t=el('span','lbl');t.textContent=cur.dir+' · '+cur.kind+' · '+cur.canvas;b.appendChild(t);
@@ -1659,6 +1687,11 @@ function recipeSteps(){
   return seq.map(s=>({src:s.src,i:s.i,erase:slotEdits(s),
     over:(s.over||[]).map(L=>({dir:L.dir,kind:L.kind,src:L.src,i:L.i,dx:L.dx|0,dy:L.dy|0,
       blend:L.blend||'normal',op:L.op===undefined?1:L.op,off:L.off?1:0,
+      // 그린 층은 «누구인지» 도 적어야 한다. lid 를 빼면 다시 열었을 때 층들이
+      // 한 열쇠로 뭉쳐 서로 덮어쓰고, track 을 빼면 한 줄로 합쳐진다.
+      lid:L.lid,track:L.track,
+      // 그린 층은 «누구인지» 도 적어야 한다. lid 를 빼면 다시 열었을 때 층들이
+      // 한 열쇠로 뭉쳐 서로 덮어쓰고, track 을 빼면 한 줄로 합쳐진다.
       erase:isBlank(L)?(edits[layKey(L)]||[])
         :isForeign(L)?[]:(edits[K(L.src,L.i)]||[])}))}));
 }
@@ -2204,11 +2237,24 @@ function shadeRamp(){
     .map(([k])=>[(k>>16)&255,(k>>8)&255,k&255])
     .sort((a,b)=>(a[0]*.299+a[1]*.587+a[2]*.114)-(b[0]*.299+b[1]*.587+b[2]*.114));
 }
-/** 끄는 중인 명암을 «구울 그 손질» 로 여민다. 미리보기도 이걸 쓴다. */
+/**
+ * 끄는 중인 명암을 «구울 그 손질» 로 여민다. 미리보기도 이걸 쓴다.
+ *
+ * 지나간 자리만 잘라 담는다. 그림 크기 표를 통째로 담으면 열 점 문지른 한 번이
+ * 조리법을 22KB 씩 불린다(실측: 1KB → 23KB). 다른 표 손질도 다 잘라 담는다.
+ */
 function shadeStroke(){
   if(!shade)return null;
-  return {t:'sh',x:shade.x,y:shade.y,w:shade.w,h:shade.h,
-    steps:toB64(shade.steps),dir:shadeDir,ramp:shade.ramp};
+  const W=shade.w,H=shade.h,st=shade.steps;
+  let x0=W,y0=H,x1=-1,y1=-1;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(st[y*W+x]){
+    if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+  }
+  if(x1<0)return null;                          // 아무 데도 안 닿았으면 남길 게 없다
+  const w=x1-x0+1,h=y1-y0+1,out=new Uint8Array(w*h);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)out[y*w+x]=st[(y+y0)*W+(x+x0)];
+  return {t:'sh',x:shade.x+x0,y:shade.y+y0,w,h,
+    steps:toB64(out),dir:shadeDir,ramp:shade.ramp};
 }
 /** 붓이 지나간 자리를 한 눈금씩 더한다. */
 function shadeDab(p){
@@ -2258,6 +2304,36 @@ const cloneStroke=s=>JSON.parse(JSON.stringify(s));
 function pushStrokes(ss){
   strokes.push(...ss.map(cloneStroke));
   if(!allFrames)return;
+  // 다른 칸에는 «지금 바로» 얹힌다. 그런데 지금 칸은 「적용」 때 얹히므로, 그 사이에
+  // 되돌리기 칸이 하나 더 생긴다 — Ctrl+Z 를 한 번 누르면 연 장만 돌아오고 나머지 여섯은
+  // 그대로 남는다(실측: 7장 → 6장 남음). 원장님이 만든 적 없는 중간 상태다.
+  // 지금 칸도 여기서 같이 얹어 «한 번 그은 것 = 되돌리기 한 칸» 으로 맞춘다.
+  if(openEd){
+    if(strokes.length)edits[openEd.key]=strokes.slice();else delete edits[openEd.key];
+    delete editedCache[openEd.key];
+  }
+  // 층을 고치는 중이면 «그 줄» 의 칸마다 얹는다. 바닥에 얹으면 층으로 그린 것이
+  // 본체에 구워져 버려서, 층을 지워도 안 없어진다 — 층의 뜻과 정반대다.
+  if(openEd&&openEd.blank){
+    const me=seq[openEd.slot];
+    const L0=me&&(me.over||[]).find(x=>x.lid===openEd.lid);
+    if(!L0)return;
+    const tr=trackOf(L0);
+    seq.forEach(s=>{
+      if(s===me)return;
+      let L=celAt(s,tr);
+      if(!L){                                   // 그 장에 아직 칸이 없으면 만들어 준다
+        L={src:'blank',i:0,lid:newUid(),track:tr,dx:0,dy:0,blend:'normal',op:1};
+        s.over=s.over||[];s.over.push(L);
+      }
+      if(L.lid===openEd.lid)return;             // 같은 그림을 함께 쓰는 칸엔 이미 얹혔다
+      const k=layKey(L);
+      edits[k]=(edits[k]||[]).concat(ss.map(cloneStroke));
+      delete editedCache[k];
+    });
+    Object.keys(compCache).forEach(k=>delete compCache[k]);
+    return;
+  }
   const meKey=openEd?openEd.key:null;
   seq.forEach(s=>{
     const own=slotOwn(s);
@@ -2778,7 +2854,7 @@ function editor(){
   // 「모든 장에」 — 이펙트는 12장이 한 몸이라, 한 장만 고치는 일이 오히려 드물다.
   const allRow=el('div','cur');
   const allBtn=el('button');allBtn.id='allframes';allBtn.textContent='모든 장에 한 번에';
-  allBtn.title='켜 두면 색 손보기·조각 내려놓기·지우기가 이어 붙인 칸 전부에 그대로 얹힙니다';
+  allBtn.title='켜 두면 색 손보기·조각 내려놓기·지우기가 이어 붙인 칸 전부에 그대로 얹힙니다. 층을 고치는 중이면 그 층의 줄에만 얹히고 바닥은 안 건드립니다.';
   allBtn.setAttribute('aria-pressed',String(allFrames));
   allBtn.onclick=()=>{allFrames=!allFrames;allBtn.setAttribute('aria-pressed',String(allFrames));
     allBtn.textContent=allFrames?('모든 장에 한 번에 · 켬('+seq.length+'칸)'):'모든 장에 한 번에';

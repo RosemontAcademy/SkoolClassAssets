@@ -326,7 +326,17 @@ try {
   say(solid(slot1After, { x: 0, y: 0, w: S.w, h: S.h }) === solid(slot1Before, { x: 0, y: 0, w: S.w, h: S.h }),
     '모양은 그대로다(칸이 뭉개지지 않았다)');
 
+  // 「모든 장에」 로 얹은 뒤 화면이 낡으면 안 된다 — 눈에는 한 장만 바뀐 것처럼 보이는데
+  // 저장하면 전부 바뀌었다(2026-08-26 실측: 갈림 6장). 얹은 «직후» 에 잰다.
+  await closeEd();
+  await pg.evaluate(()=>{const t=document.getElementById('drylab');if(t)t.textContent=''});
+  await pg.locator('#drybtn').click();
+  await pg.waitForFunction(()=>{const t=document.getElementById('drylab');return t&&t.textContent.length>0},null,{timeout:60000});
+  say(/^같음/.test(await pg.locator('#drylab').textContent()),
+    '「모든 장에」 로 얹은 직후에도 화면과 굽는 것이 같다', await pg.locator('#drylab').textContent());
+
   // ── 도형 그리기와 좌우 대칭 ─────────────────────────────────────────────
+  await openSlot(0);                               // 위에서 닫았으니 다시 연다
   await pg.locator('#allframes').click();          // 한 장만 보고 잰다
   await pg.waitForTimeout(150);
   const lineBefore = await snap();
@@ -611,6 +621,28 @@ try {
   say(await pg.locator('.tlcel').filter({ hasText: '≡' }).count() === 0, '따로 떼면 표시가 사라진다');
   say(await pg.locator('.tlcel.on').count() === 3, '떼어도 칸 수는 그대로다',
     (await pg.locator('.tlcel.on').count()) + '칸');
+
+  // 층을 고치는 중에 「모든 장에」 를 켜면 «그 층의 줄» 에 얹혀야 한다.
+  // 바닥에 얹히면 층으로 그린 것이 본체에 구워져 층을 지워도 안 없어진다(2026-08-26 실측).
+  await closeEd();
+  await cells.nth(1).click();
+  await pg.waitForSelector('#cv');
+  await pg.waitForTimeout(700);
+  const layerRowsBefore = await pg.locator('.tlcel.on').count();
+  await pg.locator('#allframes').click();
+  await pg.waitForTimeout(150);
+  await pg.locator('button[data-tool=oval]').click();
+  await drag({ x: 70, y: 70 }, { x: 84, y: 84 });
+  await pg.waitForTimeout(200);
+  await pg.locator('#allframes').click();   // 편집기가 열려 있을 때 도로 끈다
+  await pg.waitForTimeout(150);
+  await closeEd();
+  await pg.waitForTimeout(900);
+  say(await pg.locator('.tlrow').count() === 1, '「모든 장에」 가 새 줄을 만들지 않는다',
+    (await pg.locator('.tlrow').count()) + '줄');
+  say(await pg.locator('.tlcel.on').count() === slots,
+    '층을 고치는 중이면 그 줄의 모든 장에 얹힌다',
+    layerRowsBefore + '칸 → ' + (await pg.locator('.tlcel.on').count()) + '칸 (장 ' + slots + ')');
 
   // 되돌리기가 층까지 덮는가 — 층은 seq 안에 살고 손질은 edits 에 산다
   const beforeUndo = await pg.locator('.tlcel.on').count();

@@ -782,6 +782,17 @@ const rawURL=(src,i)=>'/frame.png?dir='+encodeURIComponent(cur.dir)+'&kind='+cur
 const editedCache={};
 const furl=(src,i)=>editedCache[K(src,i)]||rawURL(src,i);
 
+// 손질은 «그 칸» 에 붙는다. 같은 낱장을 두 칸이 써도 따로 고칠 수 있어야 하기 때문이다
+// (2026-08-25 원장님: 복제한 칸을 고치니 원본 칸까지 같이 바뀌었다).
+// 칸에 제 손질이 없으면 재료 낱장에 해 둔 손질을 그대로 쓴다(고치기 시작하면 그때 갈라진다).
+let uidSeq=0;
+const newUid=()=>++uidSeq;
+const slotOwn=s=>'slot:'+s.uid;
+const slotKey=s=>(s&&s.uid&&edits[slotOwn(s)])?slotOwn(s):K(s.src,s.i);
+const slotEdits=s=>edits[slotKey(s)]||[];
+/** 칸마다 번호를 하나씩 쥐여 준다. 복제한 칸은 번호가 없어서 여기서 새로 받는다. */
+const stampUids=()=>{seq.forEach(x=>{if(!x.uid)x.uid=newUid()})};
+
 // ── 층 ──────────────────────────────────────────────────────────────────────
 // 한 칸은 바닥 낱장 하나와 그 위에 얹은 층들(over)로 이뤄진다.
 // over 가 없으면 예전과 똑같이 낱장 하나짜리다 — 옛 조리법이 그대로 읽힌다.
@@ -801,6 +812,13 @@ const layName=L=>(isForeign(L)?(L.dir.replace(/^\\d+-/,'')+'·'):'')+shortSrc(L.
 // 손질을 «개수» 로만 세면 안 된다. 획 하나를 지우고 다른 자리에 하나를 그으면
 // 개수가 같아서 이름표가 그대로고, 화면은 예전 합성본을 계속 보여 준다.
 // 실제 손질 내용을 짧게 접어 넣는다.
+function editSigKey(k){
+  const st=edits[k];
+  if(!st||!st.length)return '';
+  let h=0;const s=JSON.stringify(st);
+  for(let n=0;n<s.length;n++){h=(h*31+s.charCodeAt(n))|0}
+  return st.length+':'+h;
+}
 function editSig(src,i){
   const st=edits[K(src,i)];
   if(!st||!st.length)return '';
@@ -808,12 +826,13 @@ function editSig(src,i){
   for(let k=0;k<s.length;k++){h=(h*31+s.charCodeAt(k))|0}
   return st.length+':'+h;
 }
-const slotSig=s=>JSON.stringify([s.src,s.i,editSig(s.src,s.i),
+const slotSig=s=>JSON.stringify([s.src,s.i,editSigKey(slotKey(s)),
   (s.over||[]).map(L=>[L.dir||'',L.kind||'',L.src,L.i,L.dx|0,L.dy|0,L.blend||'normal',
     L.op===undefined?1:L.op,isForeign(L)?'':editSig(L.src,L.i)])]);
 const compCache={};
 const nLayers=s=>1+((s.over&&s.over.length)||0);
-const slotURL=s=>(s.over&&s.over.length)?(compCache[slotSig(s)]||furl(s.src,s.i)):furl(s.src,s.i);
+const slotImg=s=>editedCache[slotKey(s)]||rawURL(s.src,s.i);
+const slotURL=s=>(s.over&&s.over.length)?(compCache[slotSig(s)]||slotImg(s)):slotImg(s);
 
 function loadImgs(urls,done){
   const out=[];let left=urls.length;
@@ -848,8 +867,8 @@ function ensureComposites(done){
   let left=need.length;
   need.forEach(s=>buildComposite(s,()=>{if(!--left)done()}));
 }
-function buildEdited(src,i,done){
-  const k=K(src,i), st=edits[k];
+function buildEdited(k,src,i,done){
+  const st=edits[k];
   if(!st||!st.length){delete editedCache[k];done&&done();return}
   const img=new Image();
   img.onload=()=>{
@@ -888,6 +907,23 @@ function splitKey(k){
   return [k.slice(0,at),i];
 }
 const nEdits=(src,i)=>(edits[K(src,i)]||[]).length;
+/** 손질해 둔 것들의 그림을 한꺼번에 다시 만든다. 열쇠가 두 갈래라 각각 갈라 본다. */
+function rebuildEdited(done){
+  const jobs=[];
+  Object.keys(edits).forEach(k=>{
+    if(k.indexOf('slot:')===0){
+      const uid=Number(k.slice(5));
+      const st=seq.find(x=>x.uid===uid);
+      if(st)jobs.push([k,st.src,st.i]);
+    }else{
+      const m=splitKey(k);
+      if(m)jobs.push([k,m[0],m[1]]);
+    }
+  });
+  let left=jobs.length;
+  if(!left){done();return}
+  jobs.forEach(j=>buildEdited(j[0],j[1],j[2],()=>{if(--left<=0)done()}));
+}
 
 async function boot(){
   await loadCalib();
@@ -924,19 +960,18 @@ async function load(it){
   meta={};
   for(const s of it.sources) meta[s.id]=await (await fetch('/api/frames?dir='+encodeURIComponent(it.dir)+'&kind='+it.kind+'&src='+s.id)).json();
   const r=await (await fetch('/api/recipe?dir='+encodeURIComponent(it.dir)+'&kind='+it.kind)).json();
-  if(r&&r.steps){seq=r.steps.map(s=>({src:s.src,i:s.i,over:(s.over||[]).map(L=>Object.assign({},L))}));r.steps.forEach(s=>{if(s.erase&&s.erase.length)edits[K(s.src,s.i)]=s.erase})}
-  else seq=meta.old.fills.map((_,i)=>({src:'old',i}));
+  // 조리법 파일은 칸마다 제 손질을 담고 있다. 읽을 때도 칸에 붙여야 갈라진 채로 살아난다.
+  if(r&&r.steps){
+    seq=r.steps.map(s=>({src:s.src,i:s.i,uid:newUid(),over:(s.over||[]).map(L=>Object.assign({},L))}));
+    r.steps.forEach((s,n)=>{if(s.erase&&s.erase.length)edits['slot:'+seq[n].uid]=s.erase});
+  }
+  else seq=meta.old.fills.map((_,i)=>({src:'old',i,uid:newUid()}));
   undoStack=[];redoStack=[];                     // 다른 종의 순서로 되돌아가면 안 된다
   Object.keys(editedCache).forEach(k=>delete editedCache[k]);
-  const ks=Object.keys(edits);
-  let left=ks.length;
-  if(!left){render();return}
-  ks.forEach(k=>{const m=splitKey(k);
-    if(!m){left--;return}
-    buildEdited(m[0],m[1],()=>{if(--left<=0)render()})});
-  if(left<=0)render();
+  rebuildEdited(()=>render());
 }
 function render(){
+  stampUids();
   // 층을 얹은 칸은 합성본이 있어야 그릴 수 있다. 없으면 만들고 다시 들어온다 —
   // 만들어 두면 두 번째에는 이 자리를 그냥 지나간다.
   if(seq.some(s=>s.over&&s.over.length&&!compCache[slotSig(s)])){
@@ -944,8 +979,20 @@ function render(){
   }
   const b=$('#bar');b.innerHTML='';
   const t=el('span','lbl');t.textContent=cur.dir+' · '+cur.kind+' · '+cur.canvas;b.appendChild(t);
-  cur.sources.forEach(s=>{const x=el('button');x.textContent=s.label+' 전부';
-    x.onclick=()=>{push();seq=meta[s.id].fills.map((_,i)=>({src:s.id,i}));render()};b.appendChild(x)});
+  // 재료가 다섯이면 「…전부」 단추도 다섯이 되어 도구줄이 무슨 줄인지 알 수 없어진다
+  // (2026-08-25 원장님: "너무 뭐가 많아 뭐가 뭔지 하나도 모르겠어"). 고르는 칸 하나로 모은다.
+  b.appendChild(lab('재료'));
+  const pickAll=el('select');
+  cur.sources.forEach(s=>{const o=el('option');o.value=s.id;o.textContent=s.label+' ('+s.frames+'장)';pickAll.appendChild(o)});
+  // 기본은 «지금 쓰는 것» — 손이 제일 자주 가는 자리다.
+  const liveId=(cur.sources.find(s=>s.id==='live')||cur.sources.find(s=>s.id==='old')||cur.sources[0]).id;
+  pickAll.value=liveId;
+  b.appendChild(pickAll);
+  const takeAll=el('button');takeAll.textContent='다 담기';
+  takeAll.title='고른 재료의 낱장을 처음부터 끝까지 「만든 것」 에 담습니다';
+  takeAll.onclick=()=>{const id=pickAll.value;if(!meta[id])return;
+    push();seq=meta[id].fills.map((_,i)=>({src:id,i,uid:newUid()}));render()};
+  b.appendChild(takeAll);
   const cl=el('button');cl.textContent='비우기';cl.onclick=()=>{push();seq=[];render()};b.appendChild(cl);
   b.appendChild(gap());
   b.appendChild(lab('배경'));
@@ -1039,14 +1086,8 @@ function applySnap(js){
   // 편집기를 열어 둔 채로 되돌렸으면, 그때 긋고 있던 붓질까지 그대로 되살린다.
   // mountedKey 를 맞춰 둬야 화면이 붙으면서 저장본으로 덮어쓰지 않는다.
   strokes=(o.strokes||[]).slice();
-  mountedKey=openEd?K(openEd.src,openEd.i):null;
-  const ks=Object.keys(edits);
-  let left=ks.length;
-  if(!left){render();return}
-  ks.forEach(k=>{const m=splitKey(k);
-    if(!m){left--;return}
-    buildEdited(m[0],m[1],()=>{if(--left<=0)render()})});
-  if(left<=0)render();
+  mountedKey=openEd?openEd.key:null;
+  rebuildEdited(()=>render());
 }
 function undo(){if(!undoStack.length)return;redoStack.push(snapshot());applySnap(undoStack.pop())}
 function redo(){if(!redoStack.length)return;undoStack.push(snapshot());applySnap(redoStack.pop())}
@@ -1061,13 +1102,13 @@ function strip(s){
   const sp=el('div','strip');
   for(let i=0;i<s.frames;i++){
     const f=meta[s.id].fills[i],blank=i>0&&f<meta[s.id].fills[0]*0.25;
-    const b=el('div','fr'+(blank?' blank':'')+(nEdits(s.id,i)?' edited':'')+(openEd&&openEd.src===s.id&&openEd.i===i?' sel':''));
+    const b=el('div','fr'+(blank?' blank':'')+(nEdits(s.id,i)?' edited':'')+(openEd&&openEd.key===K(s.id,i)?' sel':''));
     b.draggable=true;
     const img=el('img');img.src=furl(s.id,i);b.appendChild(img);
     const m=el('div','m');m.textContent=i+' · '+f+'%'+(blank?' 빔':'');b.appendChild(m);
-    b.onclick=()=>{const c=commitStrokes();openEd={src:s.id,i};mountedKey=null;
+    b.onclick=()=>{const c=commitStrokes();openEd={src:s.id,i,key:K(s.id,i)};mountedKey=null;
       const go=()=>{render();setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
-      if(c)buildEdited(c.src,c.i,go);else go()};
+      if(c)buildEdited(c.key,c.src,c.i,go);else go()};
     const a=el('button','add');a.textContent='＋';a.title='만든 것에 담기';
     a.onclick=e=>{e.stopPropagation();push();seq.push({src:s.id,i});render()};b.appendChild(a);
     b.addEventListener('dragstart',e=>{drag={kind:'add',src:s.id,i};b.classList.add('dragging');e.dataTransfer.effectAllowed='copy'});
@@ -1087,8 +1128,8 @@ function seqRow(){
   const c=el('div','cap');c.textContent='만든 것 '+seq.length+'장';box.appendChild(c);row.appendChild(box);
   const sp=el('div','strip');sp.id='seqstrip';
   seq.forEach((s,n)=>{
-    const b=el('div','slot'+(s.src==='old'?' old':'')+(nEdits(s.src,s.i)?' edited':'')
-      +(openEd&&openEd.src===s.src&&openEd.i===s.i?' sel':''));
+    const b=el('div','slot'+(s.src==='old'?' old':'')+(slotEdits(s).length?' edited':'')
+      +(openEd&&openEd.key===slotOwn(s)?' sel':''));
     b.draggable=true;b.dataset.n=n;b.title='눌러서 이 낱장 편집 · 낱장을 여기로 끌어다 놓으면 위에 얹습니다';
     const img=el('img');img.src=slotURL(s);b.appendChild(img);
     const m=el('div','m');m.textContent=shortSrc(s.src)+'·'+s.i;b.appendChild(m);
@@ -1112,9 +1153,9 @@ function seqRow(){
       selSlot=n;drag=null;render()});
     // 담아 놓고 보다가 손보고 싶어지는 게 자연스러운 순서다. 재료 줄로 되돌아가
     // 같은 낱장을 다시 찾게 만들면 안 된다.
-    b.onclick=()=>{const c=commitStrokes();openEd={src:s.src,i:s.i};mountedKey=null;
+    b.onclick=()=>{const c=commitStrokes();openEd={src:s.src,i:s.i,key:slotOwn(s)};mountedKey=null;
       const go=()=>{render();setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
-      if(c)buildEdited(c.src,c.i,go);else go()};
+      if(c)buildEdited(c.key,c.src,c.i,go);else go()};
     const ops=el('div','ops');
     [['✎','edit'],['層','lay'],['⧉','dup'],['◀',-1],['▶',1],['×',0]].forEach(([t,d])=>{
       const x=el('button',d===0?'x':'');x.textContent=t;
@@ -1360,7 +1401,8 @@ function play(){
 }
 async function save(){
   commitStrokes();          // 그리다 만 붓질도 저장에 담는다 — 「적용」을 잊어도 잃지 않게
-  const steps=seq.map(s=>({src:s.src,i:s.i,erase:edits[K(s.src,s.i)]||[],
+  stampUids();
+  const steps=seq.map(s=>({src:s.src,i:s.i,erase:slotEdits(s),
     over:(s.over||[]).map(L=>({dir:L.dir,kind:L.kind,src:L.src,i:L.i,dx:L.dx|0,dy:L.dy|0,
       blend:L.blend||'normal',op:L.op===undefined?1:L.op,
       erase:isForeign(L)?[]:(edits[K(L.src,L.i)]||[])}))}));
@@ -1400,6 +1442,7 @@ function pubBar(){
     now.disabled=false;beat();};
   const hold=el('button');hold.textContent='이번엔 안 보내기';hold.onclick=async()=>{
     try{await fetch('/api/hold',{method:'POST'})}catch(e){}beat();};
+  now.id='pubnow';hold.id='pubhold';
   d.append(now,hold);
   return d;
 }
@@ -1410,6 +1453,11 @@ async function beat(){
   try{ j=await (await fetch('/api/beat')).json() }catch(e){ return }
   const t=document.getElementById('pubtext');if(!t)return;
   const bar=document.getElementById('pubbar');
+  // 올릴 게 없으면 단추를 숨긴다. 늘 떠 있으면 무엇을 눌러야 하는지 알 수 없다.
+  const now=document.getElementById('pubnow'), hold=document.getElementById('pubhold');
+  const busy=j.publishing||j.n>0;
+  if(now)now.style.display=busy?'':'none';
+  if(hold)hold.style.display=(j.n>0&&!j.publishing&&j.state!=='held')?'':'none';
   bar.classList.remove('ok','err');
   if(j.publishing){ t.textContent='올리는 중… (1~2분)'; }
   else if(j.state==='failed'){ bar.classList.add('err'); t.innerHTML='<b>'+j.message+'</b> — 「지금 올리기」로 다시 해보세요'; }
@@ -1492,13 +1540,13 @@ let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=n
  */
 function commitStrokes(){
   if(!openEd)return null;
-  const k=K(openEd.src,openEd.i);
+  const k=openEd.key;
   if(mountedKey!==k)return null;              // 캔버스가 아직 안 붙었으면 붓질도 없다
   const now=edits[k]||[];
   if(JSON.stringify(now)===JSON.stringify(strokes))return null;
   push();
   if(strokes.length)edits[k]=strokes.slice();else delete edits[k];
-  return {src:openEd.src,i:openEd.i};
+  return {key:k,src:openEd.src,i:openEd.i};
 }
 function editor(){
   const wrap=el('div','ed'+(edFull?' full':''));
@@ -1516,7 +1564,7 @@ function editor(){
   fs.onclick=()=>{edFull=!edFull;render()};h.appendChild(fs);
   const cls=el('button','close');cls.textContent='닫기';cls.style.marginLeft='0';
   cls.onclick=()=>{const c=commitStrokes();openEd=null;mountedKey=null;
-    if(c)buildEdited(c.src,c.i,()=>render());else render()};h.appendChild(cls);
+    if(c)buildEdited(c.key,c.src,c.i,()=>render());else render()};h.appendChild(cls);
   wrap.appendChild(h);
 
   const main=el('div','edmain');
@@ -1573,11 +1621,11 @@ function editor(){
 
   const ap=el('button','primary');ap.id='eapply';ap.textContent='적용하고 닫기';
   ap.onclick=()=>{
-    const k=K(openEd.src,openEd.i), src=openEd.src, i=openEd.i;
+    const k=openEd.key, src=openEd.src, i=openEd.i;
     push();                              // 적용도 되돌릴 수 있어야 한다
     if(strokes.length)edits[k]=strokes.slice();else delete edits[k];
     openEd=null;mountedKey=null;
-    buildEdited(src,i,()=>render());   // 손질한 그림을 만든 뒤에 화면을 그린다
+    buildEdited(k,src,i,()=>render());   // 손질한 그림을 만든 뒤에 화면을 그린다
   };
   T.appendChild(ap);
   const hint=el('div');hint.className='cap';hint.style.textAlign='left';
@@ -1655,8 +1703,9 @@ function mount(cv,on,gr,pw){
     if(sc0){sc0.scrollLeft=(img.width*base.z-sc0.clientWidth)/2;sc0.scrollTop=(img.height*base.z-sc0.clientHeight)/2}
     // 같은 낱장을 다시 그리는 것뿐이면(전체화면 전환 등) 하던 붓질을 이어간다.
     // 여기서 무조건 저장본을 다시 읽으면 아직 '적용' 안 한 작업이 조용히 사라진다.
-    const k=K(openEd.src,openEd.i);
-    if(mountedKey!==k){ strokes=(edits[k]||[]).slice(); mountedKey=k; }
+    // 칸에 제 손질이 없으면 재료 낱장 손질에서 «베껴» 시작한다 — 여기서부터 갈라진다.
+    const k=openEd.key;
+    if(mountedKey!==k){ strokes=(edits[k]||edits[K(openEd.src,openEd.i)]||[]).slice(); mountedKey=k; }
     redraw();drawOnion(on);buildPal(pw);
     bindCanvas(cv);
   };

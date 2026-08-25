@@ -1841,15 +1841,33 @@ function redraw(){
 }
 function applyOne(c,s,W,H){
   const w=W||base.w,h=H||base.h;
-  if(s.t==='c'){c.save();c.globalCompositeOperation='destination-out';c.beginPath();c.arc(s.x,s.y,s.r,0,7);c.fill();c.restore()}
-  else if(s.t==='r'){c.save();c.globalCompositeOperation='destination-out';c.fillRect(s.x,s.y,s.w,s.h);c.restore()}
-  else if(s.t==='p'){c.fillStyle='rgb('+s.color.join(',')+')';c.beginPath();c.arc(s.x,s.y,s.r,0,7);c.fill()}
-  else if(s.t==='swap'||s.t==='fill'||s.t==='shift'||s.t==='blit'){pixelOp(c,s,w,h)}
+  // 전부 점 단위로 센다. canvas 로 그리면 가장자리가 부드럽게 칠해져(반투명 점) 굽는 쪽과
+  // 갈린다 — 실측 16384점 중 58점이 달랐다. 픽셀아트는 딱 떨어지는 쪽이 맞다.
+  pixelOp(c,s,w,h);
 }
 function pixelOp(c,s,W,H){
   const w=W||base.w,h=H||base.h;
   const d=c.getImageData(0,0,w,h),px=d.data;
-  if(s.t==='swap'){const [fr,fg,fb]=s.from,[tr,tg,tb]=s.to,t=(s.tol??20)**2*3;
+  // 굽는 쪽(lib/fxgif.mjs applyEdits)과 **같은 셈** 이어야 한다. 점 한가운데가 반지름 안에
+  // 들어오는지로만 판정한다.
+  const circle=fn=>{
+    const rr=s.r*s.r;
+    const x0=Math.max(0,Math.floor(s.x-s.r)),y0=Math.max(0,Math.floor(s.y-s.r));
+    const x1=Math.min(w,Math.ceil(s.x+s.r)),y1=Math.min(h,Math.ceil(s.y+s.r));
+    for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+      const dx=x+0.5-s.x,dy=y+0.5-s.y;
+      if(dx*dx+dy*dy<=rr)fn((y*w+x)*4);
+    }
+  };
+  if(s.t==='c'){circle(i=>{px[i+3]=0})}
+  else if(s.t==='p'){const [r,g,b]=s.color||[255,255,255];
+    circle(i=>{px[i]=r;px[i+1]=g;px[i+2]=b;px[i+3]=255})}
+  else if(s.t==='r'){
+    const x0=Math.max(0,Math.floor(s.x)),y0=Math.max(0,Math.floor(s.y));
+    const x1=Math.min(w,Math.ceil(s.x+s.w)),y1=Math.min(h,Math.ceil(s.y+s.h));
+    for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)px[(y*w+x)*4+3]=0;
+  }
+  else if(s.t==='swap'){const [fr,fg,fb]=s.from,[tr,tg,tb]=s.to,t=(s.tol??20)**2*3;
     for(let i=0;i<px.length;i+=4){if(px[i+3]<40)continue;const a=px[i]-fr,b=px[i+1]-fg,g=px[i+2]-fb;
       if(a*a+b*b+g*g<=t){px[i]=tr;px[i+1]=tg;px[i+2]=tb}}}
   else if(s.t==='fill'){

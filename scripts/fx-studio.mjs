@@ -233,12 +233,19 @@ function pending() {
   return [...new Set(files)];
 }
 
+/** 커밋은 됐는데 아직 못 민 것. 푸시만 실패한 판이 조용히 남는 걸 막는다. */
+function unpushed() {
+  const r = sh('git', ['rev-list', '--count', '@{u}..HEAD']);
+  return r.code === 0 ? (parseInt(r.out.trim(), 10) || 0) : 0;
+}
+
 async function publish(pinGame = true) {
   const files = pending();
+  const ahead = unpushed();
 
   // 올릴 파일이 없어도, 게임이 아직 옛 커밋을 가리키고 있으면 못박기는 해야 한다.
   // (자산은 올렸는데 게임 코드 갱신만 빠진 상태가 실제로 생긴다)
-  if (!files.length) {
+  if (!files.length && !ahead) {
     if (!pinGame) return { ok: false, error: '올릴 것이 없습니다. 먼저 저장하세요.' };
     const sha = sh('git', ['rev-parse', 'HEAD']).out.trim();
     const game = pinToSha(sha);
@@ -252,14 +259,21 @@ async function publish(pinGame = true) {
   const names = [...new Set(gifs.map(f => f.split('/')[1]))];
   const log = [];
 
-  const add = sh('git', ['add', '--', ...files]);
-  if (add.code !== 0) return { ok: false, error: '담기 실패: ' + (add.err || add.out) };
-  log.push('담음 ' + files.length + '개');
+  // 바뀐 파일이 없고 «못 민 커밋» 만 있으면 담기·커밋은 건너뛰고 밀기만 다시 한다.
+  const msg = files.length
+    ? 'FX 편집기에서 다듬은 연출 ' + gifs.length + '개 — ' + names.join(', ')
+    : '못 민 커밋 ' + ahead + '개를 다시 밀었습니다';
+  if (files.length) {
+    const add = sh('git', ['add', '--', ...files]);
+    if (add.code !== 0) return { ok: false, error: '담기 실패: ' + (add.err || add.out) };
+    log.push('담음 ' + files.length + '개');
 
-  const msg = 'FX 편집기에서 다듬은 연출 ' + gifs.length + '개 — ' + names.join(', ');
-  const ci = sh('git', ['commit', '-m', msg, '--', ...files]);
-  if (ci.code !== 0) return { ok: false, error: '커밋 실패: ' + (ci.err || ci.out), log };
-  log.push('커밋함');
+    const ci = sh('git', ['commit', '-m', msg, '--', ...files]);
+    if (ci.code !== 0) return { ok: false, error: '커밋 실패: ' + (ci.err || ci.out), log };
+    log.push('커밋함');
+  } else {
+    log.push('못 민 커밋 ' + ahead + '개를 다시 밉니다');
+  }
 
   const push = sh('git', ['push', 'origin', 'main']);
   if (push.code !== 0) return { ok: false, error: '푸시 실패: ' + (push.err || push.out), log };
@@ -332,6 +346,80 @@ function pinToSha(sha) {
   return { ok: true, from: m[2], to: sha };
 }
 
+// ── 자동 올리기 ──────────────────────────────────────────────────────────────
+// 원장님은 「저장」만 누르신다. 올리는 건 «손을 놓은 뒤» 한 번에 묶어서 한다.
+//
+// 왜 저장할 때마다 안 올리나: 올리기는 자산 저장소 커밋·푸시 + 게임 코드의 그림 주소를
+// 새 커밋으로 못박는 커밋·푸시 + 앱 배포(45~105초 실측)다. 2분마다 저장하시는 손버릇에
+// 그걸 붙이면 두 시간에 커밋 80개·배포 40번이 되고, 다듬다 만 판이 계속 아이 화면으로
+// 나간다. 저장할 때마다 타이머를 3분으로 되밀면, 작업하는 동안엔 아무것도 안 나가고
+// 끝난 뒤 한 번만 나간다.
+const PUBLISH_DELAY = 3 * 60 * 1000;
+const IDLE_EXIT     = 5 * 60 * 1000;   // 열린 탭이 하나도 없으면 스스로 꺼진다
+let pubTimer = null, pubAt = 0, pubState = { state: 'idle', message: '' };
+let publishing = false, holdUntilNextSave = false, lastBeat = Date.now();
+// 이번에 켠 뒤 «저장을 한 번이라도 했는가». 안 했으면 끌 때 아무것도 안 올린다 —
+// 예전부터 안 올린 채 남아 있던 남의 작업을, 원장님이 시키지도 않았는데 프로그램이
+// 조용히 밀어 올리면 안 된다. 그건 화면의 「지금 올리기」로만 나간다.
+let savedThisRun = false;
+
+function schedulePublish() {
+  savedThisRun = true;
+  holdUntilNextSave = false;
+  if (pubTimer) clearTimeout(pubTimer);
+  pubAt = Date.now() + PUBLISH_DELAY;
+  pubTimer = setTimeout(() => runPublish('시간이 되어'), PUBLISH_DELAY);
+  pubState = { state: 'waiting', message: '' };
+}
+function cancelPublish() {
+  if (pubTimer) clearTimeout(pubTimer);
+  pubTimer = null; pubAt = 0; holdUntilNextSave = true;
+  pubState = { state: 'held', message: '이번엔 안 보냅니다 — 다음 저장 때 다시 준비합니다' };
+}
+async function runPublish(why) {
+  if (publishing) return pubState;
+  if (pubTimer) { clearTimeout(pubTimer); pubTimer = null; }
+  pubAt = 0;
+  if (!pending().length && !unpushed()) { pubState = { state: 'idle', message: '' }; return pubState; }
+  publishing = true;
+  pubState = { state: 'running', message: why + ' 올리는 중…' };
+  try {
+    const r = await publish(true);
+    pubState = r.ok
+      ? { state: 'done', message: '올렸습니다 · ' + (r.gifs || []).length + '개' + (r.game && r.game.ok ? ' · 게임까지 반영' : ''), at: Date.now() }
+      : { state: 'failed', message: '못 올렸습니다 — ' + (r.error || '') };
+  } catch (e) {
+    pubState = { state: 'failed', message: '못 올렸습니다 — ' + e.message };
+  }
+  publishing = false;
+  return pubState;
+}
+/** 화면이 보여줄 지금 상태. 몇 개가 밀려 있고 몇 초 뒤에 나가는지. */
+function pubInfo() {
+  return {
+    n: pending().length + unpushed(),
+    state: pubState.state,
+    message: pubState.message || '',
+    secondsLeft: pubAt ? Math.max(0, Math.round((pubAt - Date.now()) / 1000)) : 0,
+    publishing,
+  };
+}
+/** 끄기 전에 밀린 것을 먼저 올린다 — 안 그러면 저장만 되고 아무도 모르게 남는다. */
+async function shutdown(why) {
+  console.log('');
+  console.log('  ' + why);
+  if (savedThisRun && (pending().length || unpushed())) {
+    console.log('  아직 안 올린 것이 있어 먼저 올립니다…');
+    const r = await runPublish('끄기 전에');
+    console.log('  ' + (r.message || ''));
+  }
+  process.exit(0);
+}
+setInterval(() => {
+  if (publishing || Date.now() - lastBeat < IDLE_EXIT) return;
+  shutdown('한동안 아무도 안 써서 편집기를 끕니다.');
+}, 30 * 1000).unref();
+
 // ── 서버 ─────────────────────────────────────────────────────────────────────
 const send = (res, code, type, body) => { res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' }); res.end(body); };
 const json = (res, code, obj) => send(res, code, 'application/json; charset=utf-8', JSON.stringify(obj));
@@ -354,7 +442,22 @@ const server = createServer((req, res) => {
 
     // 살아 있느냐만 묻는 자리. 목록을 통째로 읽는 /api/items 로 확인하면
     // 설정 화면을 열 때마다 skillFX 폴더 62개를 훑게 된다.
-    if (url.pathname === '/api/ping') return json(res, 200, { ok: true, port: server.__port });
+    if (url.pathname === '/api/ping') { lastBeat = Date.now(); return json(res, 200, { ok: true, port: server.__port }); }
+
+    // 화면이 열려 있는 동안만 켜져 있게 하는 신호. 탭을 닫으면 신호가 끊기고,
+    // 5분 뒤 편집기가 밀린 것을 올린 다음 스스로 꺼진다.
+    if (url.pathname === '/api/beat') { lastBeat = Date.now(); return json(res, 200, pubInfo()); }
+    if (url.pathname === '/api/pubstate') return json(res, 200, pubInfo());
+    if (url.pathname === '/api/publish-now' && req.method === 'POST') {
+      runPublish('바로').then(st => json(res, 200, st)).catch(e => json(res, 500, { error: e.message }));
+      return;
+    }
+    if (url.pathname === '/api/hold' && req.method === 'POST') { cancelPublish(); return json(res, 200, pubInfo()); }
+    if (url.pathname === '/api/quit' && req.method === 'POST') {
+      json(res, 200, { ok: true });
+      setTimeout(() => shutdown('창을 닫아 편집기를 끕니다.'), 50);
+      return;
+    }
 
     if (url.pathname === '/') return send(res, 200, 'text/html; charset=utf-8', PAGE);
 
@@ -438,7 +541,7 @@ const server = createServer((req, res) => {
       let raw = '';
       req.on('data', c => { raw += c; });
       req.on('end', () => {
-        try { json(res, 200, save(JSON.parse(raw))); }
+        try { const out = save(JSON.parse(raw)); schedulePublish(); json(res, 200, out); }
         catch (e) { json(res, 400, { error: e.message }); }
       });
       return;
@@ -854,14 +957,16 @@ function render(){
   const rd2=el('button');rd2.textContent='다시하기';rd2.disabled=!redoStack.length;
   rd2.title='Ctrl+Shift+Z — 되돌린 것을 도로 합니다';
   rd2.onclick=redo;b.appendChild(rd2);
+  // 단추는 「저장」 하나다. 올리는 건 손을 놓으면 알아서 한 번에 나간다 —
+  // 아래 상태줄(#pubbar)이 언제 나가는지 말해 주고, 거기서 앞당기거나 미룰 수 있다.
   const sv=el('button','primary');sv.textContent='저장';sv.disabled=!seq.length;sv.onclick=save;b.appendChild(sv);
-  const pin=el('button');pin.id='pinbtn';pin.textContent='게임까지 반영';
-  pin.setAttribute('aria-pressed',String(pinGame));
-  pin.title='켜면 게임 코드의 자산 주소를 이번 커밋으로 못박고 배포까지 합니다(1~2분). 끄면 자산만 올립니다.';
-  pin.onclick=()=>{pinGame=!pinGame;pin.setAttribute('aria-pressed',String(pinGame))};b.appendChild(pin);
-  const pb=el('button','pub');pb.id='pubbtn';pb.textContent='올리기';
-  pb.title='저장한 것을 커밋·푸시하고, 게임 코드까지 갱신합니다';
-  pb.onclick=publish;b.appendChild(pb);
+  const qb=el('button');qb.textContent='끝내기';
+  qb.title='안 올린 게 있으면 올리고 편집기를 끕니다';
+  qb.onclick=async()=>{
+    if(!confirm('편집기를 끕니다. 안 올린 게 있으면 올리고 끕니다.'))return;
+    try{await fetch('/api/quit',{method:'POST'})}catch(e){}
+    document.body.innerHTML='<div style="padding:40px;font:600 15px system-ui">편집기를 껐습니다. 이 탭은 닫으셔도 됩니다.</div>';
+  };b.appendChild(qb);
 
   stripTimers.forEach(clearInterval);stripTimers=[];
   const W=$('#work');W.innerHTML='';
@@ -877,6 +982,7 @@ function render(){
       +' · 한 바퀴 <b>'+loop+'ms</b> → 창 '+(fit/1000)+'초 안에서 <b>'+(fit/loop).toFixed(2)+'바퀴</b>'
     :'낱장을 눌러 크게 보고, ＋로 담으세요.';
   W.appendChild(info);
+  W.appendChild(pubBar());
   W.appendChild(gameView());
   if(openEd) W.appendChild(editor());
   play();
@@ -1232,36 +1338,53 @@ async function save(){
     body:JSON.stringify({dir:cur.dir,kind:cur.kind,seq:steps,fitMs:fit,leadShort})});
   const j=await r.json();
   const m=el('div','msg '+(j.ok?'ok':'err'));
-  m.innerHTML=j.ok?'저장했습니다 — '+j.frames+'장 · 한 바퀴 '+j.loop_ms+'ms<br>옛 판은 재료 줄에 「저장본」 으로 남습니다. 올린 뒤 CDN 비우기: <code>'+j.purge+'</code>':'실패: '+j.error;
+  m.innerHTML=j.ok?'저장했습니다 — '+j.frames+'장 · 한 바퀴 '+j.loop_ms+'ms<br>옛 판은 재료 줄에 「저장본」 으로 남습니다. 아이들 화면까지는 아래 줄이 알아서 보냅니다.':'실패: '+j.error;
+  beat();
   $('#work').appendChild(m);m.scrollIntoView({behavior:'smooth',block:'nearest'});
   if(j.ok){const n=document.querySelector('.it.on');if(n&&!n.querySelector('.done')){const d=el('span','done');d.textContent='●';n.appendChild(d)}}
 }
 
-async function publish(){
-  const btn=document.getElementById('pubbtn');
-  if(btn){btn.disabled=true;btn.textContent='올리는 중…'}
+/**
+ * 올리기 상태줄. 「저장」 말고는 손댈 게 없어야 하지만, 지금 어떤 상태인지는
+ * 늘 보여야 한다 — 예전에는 저장만 하고 안 올린 걸 화면으로 알 수가 없었다
+ * (리자몽이 실제로 그렇게 하루를 넘겼다).
+ */
+function pubBar(){
+  setTimeout(beat,0);
+  const d=el('div','msg');d.id='pubbar';d.style.display='flex';d.style.alignItems='center';d.style.gap='10px';
+  const t=el('span');t.id='pubtext';t.textContent='…';d.appendChild(t);
+  const sp=el('span');sp.style.flex='1';d.appendChild(sp);
+  const now=el('button');now.textContent='지금 올리기';now.onclick=async()=>{
+    now.disabled=true;const t=document.getElementById('pubtext');if(t)t.textContent='올리는 중… (1~2분)';
+    try{await fetch('/api/publish-now',{method:'POST'})}catch(e){}
+    now.disabled=false;beat();};
+  const hold=el('button');hold.textContent='이번엔 안 보내기';hold.onclick=async()=>{
+    try{await fetch('/api/hold',{method:'POST'})}catch(e){}beat();};
+  d.append(now,hold);
+  return d;
+}
+/** 서버에 지금 상태를 묻는다. 이 부름이 «화면이 열려 있다» 는 신호도 된다 —
+    탭을 닫으면 신호가 끊기고 편집기가 스스로 꺼진다. */
+async function beat(){
   let j;
-  try{ j=await (await fetch('/api/publish',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({pinGame})})).json() }
-  catch(e){ j={ok:false,error:'서버에 못 닿았습니다: '+e.message} }
-  if(btn){btn.disabled=false;btn.textContent='올리기'}
-  const m=el('div','msg '+(j.ok?'ok':'err'));
-  if(j.ok){
-    const v=j.verify||{};
-    const okCdn=v.same===true;
-    m.innerHTML='<b>올렸습니다.</b> '+(j.gifs||[]).length+'개<br>'
-      +(j.log||[]).join(' → ')
-      +(j.game&&j.game.ok
-        ? '<br><b>게임 코드를 '+String(j.sha).slice(0,8)+' 로 못박았습니다.</b> Vercel 배포가 끝나면(1~2분) 반영됩니다.'
-        : (j.game?'<br>⚠ 게임 코드 갱신 실패: '+j.game.error+' — 자산만 올라갔고, @main 은 최대 12시간 낡습니다.':''))
-      +(v.error?'<br>확인 실패: '+v.error
-        : (okCdn?'<br>CDN 확인: 새 파일이 나옵니다 ('+v.cdnLen+'B)'
-                :'<br>⚠ CDN 이 아직 옛 파일을 줍니다 (CDN '+v.cdnLen+'B / 내 PC '+v.localLen+'B)'))
-      +'<br><span style="opacity:.7">'+(j.message||'')+'</span>';
-  } else {
-    m.innerHTML='<b>못 올렸습니다.</b> '+(j.error||'')+((j.log||[]).length?'<br>'+j.log.join(' → '):'');
-  }
-  $('#work').appendChild(m);m.scrollIntoView({behavior:'smooth',block:'nearest'});
+  try{ j=await (await fetch('/api/beat')).json() }catch(e){ return }
+  const t=document.getElementById('pubtext');if(!t)return;
+  const bar=document.getElementById('pubbar');
+  bar.classList.remove('ok','err');
+  if(j.publishing){ t.textContent='올리는 중… (1~2분)'; }
+  else if(j.state==='failed'){ bar.classList.add('err'); t.innerHTML='<b>'+j.message+'</b> — 「지금 올리기」로 다시 해보세요'; }
+  else if(j.n===0){ t.textContent=j.state==='done'?(j.message||'다 올렸습니다'):'올릴 것이 없습니다'; if(j.state==='done')bar.classList.add('ok'); }
+  else if(j.state==='held'){ t.textContent='안 올린 것 '+j.n+'개 · 이번엔 안 보냅니다 (다음 저장 때 다시 준비)'; }
+  else if(j.secondsLeft>0){ const m=Math.floor(j.secondsLeft/60),sec=j.secondsLeft%60;
+    t.textContent='안 올린 것 '+j.n+'개 · '+(m?m+'분 ':'')+sec+'초 뒤 자동으로 올라갑니다'; }
+  else { t.textContent='안 올린 것 '+j.n+'개 · 저장하면 3분 뒤 자동으로 올라갑니다'; }
+}
+setInterval(beat,3000);
+
+/** 「지금 올리기」 — 서버가 쥐고 있는 그 타이머를 그냥 당겨 실행한다. */
+async function publishNow(){
+  try{ await fetch('/api/publish-now',{method:'POST'}) }catch(e){}
+  beat();
 }
 
 // 단축키 — 되돌리기와 저장은 손이 먼저 간다.

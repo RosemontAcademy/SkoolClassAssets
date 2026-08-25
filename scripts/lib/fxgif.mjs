@@ -7,7 +7,7 @@
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
-import { GifReader } from 'omggif';
+import { GifReader, GifWriter } from 'omggif';
 import GifEncoder from 'gif-encoder-2';
 
 /**
@@ -39,8 +39,48 @@ const MAGENTA = 0xFF00FF;
  * 장마다 다르게 줄 수 있어야 하는 이유: 0번 장은 이펙트가 아직 없는 맨 스프라이트라,
  * 다른 장과 같은 시간을 주면 공격이 시작되기 전에 멈춰 있는 것처럼 보인다.
  */
+/**
+ * 색을 하나도 안 바꾸고 저장한다 — 쓰인 색이 255가지 이하일 때(픽셀아트는 거의 늘 그렇다).
+ *
+ * 왜 필요한가: gif-encoder-2 의 'neuquant' 는 **색을 새로 고른다.** 2026-08-25 실측으로
+ * 캐릭터 픽셀의 59.5% 만 원본 색으로 남고 나머지가 조금씩 밀렸다(품질을 최고로 올려도 같다).
+ * 'octree' 로 바꿔 보니 색은 100% 지켜지는데 **투명이 통째로 죽었다**(투명 86%→0.1%,
+ * 배경이 마젠타로 굳음). 그래서 둘 다 안 쓰고, 쓰인 색을 그대로 팔레트에 담아 쓴다.
+ *
+ * 256색을 넘으면 null 을 주고, 부르는 쪽이 예전 방식으로 떨어진다.
+ */
+function exactGif(w, h, frames, per, delayMs) {
+  const idx = new Map();                 // 'r,g,b' → 팔레트 자리
+  const pal = [0xFF00FF];                // 0번은 투명 자리
+  for (const f of frames) {
+    for (let i = 0; i < f.length; i += 4) {
+      if (f[i + 3] < 128) continue;
+      const k = (f[i] << 16) | (f[i + 1] << 8) | f[i + 2];
+      if (!idx.has(k)) { idx.set(k, pal.length); pal.push(k); if (pal.length > 256) return null; }
+    }
+  }
+  let size = 2; while (size < pal.length) size *= 2;      // gif 팔레트는 2의 제곱만 된다
+  while (pal.length < size) pal.push(0);
+
+  const buf = Buffer.alloc(w * h * frames.length + 4096 + size * 3);
+  const gw = new GifWriter(buf, w, h, { loop: 0, palette: pal });
+  const px = new Uint8Array(w * h);
+  for (let k = 0; k < frames.length; k++) {
+    const f = frames[k];
+    for (let p = 0, i = 0; p < px.length; p++, i += 4) {
+      px[p] = f[i + 3] < 128 ? 0 : idx.get((f[i] << 16) | (f[i + 1] << 8) | f[i + 2]);
+    }
+    const d = per ? (per[k] ?? per[per.length - 1]) : delayMs;
+    gw.addFrame(0, 0, w, h, px, { delay: Math.round(d / 10), transparent: 0, disposal: 2 });
+  }
+  return Buffer.from(buf.slice(0, gw.end()));
+}
+
 export function encodeGif(w, h, frames, delayMs) {
   const per = Array.isArray(delayMs) ? delayMs : null;
+  const exact = exactGif(w, h, frames, per, delayMs);
+  if (exact) return exact;
+  // 256색이 넘는 그림 — 예전 방식으로 떨어진다(색이 조금 밀린다).
   const enc = new GifEncoder(w, h, 'neuquant', true, frames.length);
   if (!per) enc.setDelay(delayMs);
   enc.setRepeat(0);

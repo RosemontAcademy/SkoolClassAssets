@@ -403,7 +403,7 @@ const CHARACTERS = {
   },
   persian: {
     spriteId: 53, canvasSize: 128,
-    attackAction:  'persian, sleek tan cat with a red gem on its forehead, at the bottom-left corner, stays fully visible in every frame, it rakes one front paw upward and three long white claw streaks tear diagonally toward the top-right corner, side view',
+    attackAction:  'persian, tan cat with a red forehead gem, planted in the bottom-left corner, its body never walks or drifts out of that corner, only its front paw swings: it rakes the paw upward and three long bright white claw streaks tear toward the top-right corner, side view',
     attackedAction:'persian, sleek tan cat with a red gem on its forehead, at the top-right corner facing the viewer, stays fully visible in every frame, it rakes one front paw downward and three long white claw streaks tear diagonally toward the bottom-left corner, front view',
     hitColor: 0xF0F0F0FF, hitShape: 'horizontal', elemental: false,
     hitDescription: 'slash impact, three long white claw gashes rip across the target, the edges flash bright then thin sparks fly along the cuts, pixel art',

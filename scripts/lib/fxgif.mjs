@@ -370,6 +370,50 @@ export function applyEdits(px, w, h, edits) {
  *
  * dx·dy 는 얹는 자리. 캔버스 밖으로 나간 부분은 버린다.
  */
+/**
+ * 조리법 한 벌을 낱장 알갱이로 굽는다 (gif 로 만들기 «직전» 까지).
+ *
+ * 한 칸은 바닥 낱장 하나와 그 위에 얹은 층들(over)로 이뤄진다.
+ * 층의 바닥으로 **'blank'** 를 쓰면 «투명한 빈 낱장» 이 된다 — 그러면 그 층은
+ * 「빈 바닥 + 손질 줄」 이 되어, 아무 그림이나 그려 넣는 층이 손질 엔진만으로 굳는다.
+ * 굽는 셈을 새로 넣을 필요가 없고, over 항목이 하나 느는 것뿐이라 옛 저장본도 그대로 읽힌다.
+ *
+ *   get(dir, kind, srcId) → { w, h, frames:[알갱이...] } · 없으면 null
+ *
+ * 서버가 아니라 여기 두는 이유: 편집기 대본은 부르는 순간 서버가 뜨므로 검사에서 못 쓴다.
+ */
+export function composeSeq({ dir, kind, seq }, get) {
+  if (!dir || !kind || !Array.isArray(seq) || !seq.length) throw new Error('빈 조리법입니다');
+  let w = 0, h = 0;
+  const frameOf = (d, k, srcId, i, what) => {
+    if (srcId === 'blank') {
+      // 빈 층은 «위에 얹는 것» 이라 크기를 스스로 못 정한다. 바닥이 먼저 서 있어야 한다.
+      if (!w) throw new Error('빈 층이 맨 아래에 있습니다 — 바닥 낱장이 먼저 있어야 합니다');
+      return new Uint8Array(w * h * 4);
+    }
+    const got = get(d, k, srcId);
+    if (!got || !got.frames[i]) throw new Error(`${what} 낱장을 못 찾았습니다 (${d} ${k} ${srcId}·${i})`);
+    if (!w) { w = got.w; h = got.h; }
+    if (got.w !== w || got.h !== h)
+      throw new Error(`캔버스 크기가 다릅니다 — ${d} ${k} 는 ${got.w}×${got.h}, 이 종은 ${w}×${h}`);
+    return got.frames[i];
+  };
+  const picked = [];
+  for (const step of seq) {
+    const px = new Uint8Array(frameOf(dir, kind, step.src, step.i, '바닥'));
+    if (step.erase && step.erase.length) applyEdits(px, w, h, step.erase);
+    for (const L of step.over || []) {
+      if (L.off) continue;                       // 눈을 끈 층은 굽기에서 뺀다
+      const lay = new Uint8Array(frameOf(L.dir || dir, L.kind || kind, L.src, L.i, '얹은 층'));
+      if (L.erase && L.erase.length) applyEdits(lay, w, h, L.erase);
+      compositeInto(px, lay, w, h, L.dx || 0, L.dy || 0, L.blend || 'normal',
+        L.op === undefined ? 1 : L.op);
+    }
+    picked.push(px);
+  }
+  return { w, h, picked };
+}
+
 export function compositeInto(dst, src, w, h, dx = 0, dy = 0, blend = 'normal', opacity = 1) {
   const ox = Math.round(dx), oy = Math.round(dy);
   for (let y = 0; y < h; y++) {

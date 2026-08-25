@@ -287,7 +287,9 @@ try {
     await pg.waitForSelector('#cv');
     await pg.waitForTimeout(700);
   };
+  // 편집기가 안 열려 있을 수도 있다 — 없으면 그냥 지나간다.
   const closeEd = async () => {
+    if (await pg.locator('.ed button.close').count() === 0) return;
     await pg.locator('.ed button.close').click();
     await pg.waitForTimeout(500);
   };
@@ -504,6 +506,153 @@ try {
   await pg.keyboard.press('Escape');
   await pg.waitForTimeout(250);
   say(outside(rotBefore, await snap(), []) === 0, '돌리다 Esc 면 없던 일이 된다');
+
+  // ── 그린 층 ─────────────────────────────────────────────────────────────
+  // 층의 고갱이는 «따로 논다» 는 것이다. 층에 그린 것이 바닥을 안 건드려야 하고,
+  // 층을 껐다 켜면 그 층 그림만 사라졌다 돌아와야 한다.
+  await closeEd();
+  await pg.locator('.slot').first().locator('.ops button', { hasText: '層' }).click();
+  await pg.waitForTimeout(600);
+  const baseThumb = async () => pg.evaluate(() => {
+    const im = document.querySelector('.slot.on img') || document.querySelector('.slot img');
+    // 앞머리 몇 글자는 그림이 달라도 같다(PNG 머리말) — 통째로 견줘야 한다
+    return im ? im.src : '';
+  });
+  say(await pg.locator('#addblank').count() === 1, '층 목록에 「＋ 그린 층」 이 있다');
+  await pg.locator('#addblank').click();
+  await pg.waitForSelector('#cv');
+  await pg.waitForTimeout(800);
+  const layerStart = await snap();
+  let opaque = 0;
+  for (let i = 3; i < layerStart.length; i += 4) if (layerStart[i] > 0) opaque++;
+  say(opaque === 0, '그린 층은 «빈 칸» 에서 시작한다(바닥이 안 깔린다)', opaque + '점 차 있음');
+  say(await pg.evaluate(() => {
+    const o = document.getElementById('onion');
+    const d = o.getContext('2d').getImageData(0, 0, o.width, o.height).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return true;
+    return false;
+  }), '그 칸 그림이 옅게 깔려 «어디에 그리는지» 보인다');
+
+  // 층에 한 줄 긋고 적용
+  await pg.locator('button[data-tool=line]').click();
+  await pg.locator('#brushrange').evaluate(el => { el.value = 3; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await drag({ x: 4, y: 4 }, { x: Math.min(S.w - 4, 40), y: 4 });
+  await pg.waitForTimeout(200);
+  const drawn = await snap();
+  let inked = 0;
+  for (let i = 3; i < drawn.length; i += 4) if (drawn[i] > 0) inked++;
+  say(inked > 0, '층에 그은 것이 남는다', inked + '점');
+  await closeEd();
+  await pg.waitForTimeout(600);
+  const rows = await pg.locator('.lrow').count();
+  say(rows >= 2, '층 목록에 그린 층이 줄로 선다', rows + '줄');
+  say(/그린 층/.test(await pg.locator('.lrow .lname').first().textContent()), '이름이 «그린 층» 이다');
+
+  // 바닥을 열어 보면 «층에 그은 것» 이 안 보여야 한다 — 층이 새면 여기서 걸린다
+  // 「層」 단추는 토글이다 — 이미 열려 있으면 누르는 순간 닫힌다. 열려 있는지부터 본다.
+  if (await pg.locator('.lrow').count() === 0) {
+    await pg.locator('.slot').first().locator('.ops button', { hasText: '層' }).click();
+    await pg.waitForTimeout(600);
+  }
+  const eye = pg.locator('.lrow button', { hasText: /보임|꺼짐/ }).first();
+  const withLayer = await baseThumb();
+  await eye.click();
+  await pg.waitForTimeout(700);
+  const withoutLayer = await baseThumb();
+  say(withLayer !== withoutLayer, '층을 끄면 칸 그림이 바뀐다(층이 실제로 얹혀 있었다)');
+  await eye.click();
+  await pg.waitForTimeout(700);
+  say(await baseThumb() === withLayer, '다시 켜면 그대로 돌아온다');
+
+  // ── 타임라인 ────────────────────────────────────────────────────────────
+  // 층이 생기면 「만든 것」 줄 아래로 한 줄이 펼쳐지고, 빈 칸을 누르면 그 장에도 층이 생긴다.
+  const cells = pg.locator('.tlrow').first().locator('.tlcel');
+  say(await pg.locator('.tlrow').count() >= 1, '층이 생기면 타임라인 줄이 펼쳐진다');
+  say(await cells.count() === slots, '줄의 칸 수가 장 수와 같다', (await cells.count()) + '/' + slots);
+  say(await pg.locator('.tlcel.on').count() === 1, '층이 있는 장만 켜져 보인다',
+    (await pg.locator('.tlcel.on').count()) + '칸');
+  // 빈 칸을 눌러 다른 장에도 같은 줄의 층을 만든다
+  await cells.nth(3).click();
+  await pg.waitForSelector('#cv');
+  await pg.waitForTimeout(700);
+  await pg.locator('button[data-tool=rect]').click();
+  await drag({ x: 6, y: 6 }, { x: 20, y: 20 });
+  await pg.waitForTimeout(200);
+  await closeEd();
+  await pg.waitForTimeout(700);
+  say(await pg.locator('.tlrow').count() === 1, '한 줄에 모인다(줄이 늘어나지 않는다)',
+    (await pg.locator('.tlrow').count()) + '줄');
+  say(await pg.locator('.tlcel.on').count() === 2, '두 장에 층이 생겼다',
+    (await pg.locator('.tlcel.on').count()) + '칸');
+  // 줄 이름을 누르면 그 줄 전체가 꺼진다
+  await pg.locator('.tlname').first().click();
+  await pg.waitForTimeout(600);
+  say(await pg.locator('.tlcel.off').count() === 2, '줄 이름을 누르면 그 줄이 통째로 꺼진다',
+    (await pg.locator('.tlcel.off').count()) + '칸');
+  await pg.locator('.tlname').first().click();
+  await pg.waitForTimeout(600);
+  say(await pg.locator('.tlcel.off').count() === 0, '다시 누르면 통째로 켜진다');
+
+  // 칸 함께 쓰기(이어 쓰기)와 따로 떼기
+  await cells.nth(0).click({ modifiers: ['Alt'] });          // 이 칸을 복사
+  await pg.waitForTimeout(250);
+  await cells.nth(5).click({ modifiers: ['Shift'] });        // 빈 칸에 «함께 쓰기»
+  await pg.waitForTimeout(700);
+  say(await pg.locator('.tlcel.on').count() === 3, '함께 쓰기로 칸이 하나 늘었다',
+    (await pg.locator('.tlcel.on').count()) + '칸');
+  const linkedCells = await pg.locator('.tlcel').filter({ hasText: '≡' }).count();
+  say(linkedCells === 2, '함께 쓰는 칸이 ≡ 로 표시된다', linkedCells + '칸');
+  await cells.nth(5).click();
+  await pg.waitForSelector('#cv');
+  await pg.waitForTimeout(700);
+  say(await pg.locator('#unlink').count() === 1, '이어 쓴 칸을 열면 «다 바뀝니다» 라고 말해 준다');
+  await pg.locator('#unlink').click();
+  await pg.waitForTimeout(800);
+  say(await pg.locator('.tlcel').filter({ hasText: '≡' }).count() === 0, '따로 떼면 표시가 사라진다');
+  say(await pg.locator('.tlcel.on').count() === 3, '떼어도 칸 수는 그대로다',
+    (await pg.locator('.tlcel.on').count()) + '칸');
+
+  // 되돌리기가 층까지 덮는가 — 층은 seq 안에 살고 손질은 edits 에 산다
+  const beforeUndo = await pg.locator('.tlcel.on').count();
+  await pg.keyboard.press('Control+z');
+  await pg.waitForTimeout(700);
+  const afterUndo = await pg.locator('.tlcel.on').count();
+  say(afterUndo !== beforeUndo || await pg.locator('.tlcel').filter({ hasText: '≡' }).count() > 0,
+    '되돌리기가 층 구조까지 되돌린다', beforeUndo + '칸 → ' + afterUndo + '칸');
+  await pg.keyboard.press('Control+Shift+z');
+  await pg.waitForTimeout(700);
+
+  // 계획서의 「끝났다는 조건」 3번 — 한 장의 한 층만 고쳤을 때 다른 장은 한 점도 안 바뀐다.
+  // 층이 새면 여기서 걸린다. 칸 그림(합성본)을 통째로 견줘 본다.
+  await closeEd();          // 「따로 떼기」 뒤에는 편집기가 열려 있다 — 줄을 덮는다
+  const allThumbs = async () => pg.$$eval('.slot img', ims => ims.map(i => i.src));
+  const thumbsBefore = await allThumbs();
+  await cells.nth(0).click();
+  await pg.waitForSelector('#cv');
+  await pg.waitForTimeout(700);
+  await pg.locator('button[data-tool=pencil]').click();
+  await pg.locator('#brushrange').evaluate(el => { el.value = 6; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await drag({ x: 50, y: 50 }, { x: 58, y: 58 });
+  await pg.waitForTimeout(200);
+  await closeEd();
+  await pg.waitForTimeout(900);
+  const thumbsAfter = await allThumbs();
+  const changedSlots = thumbsBefore.map((t, i) => t !== thumbsAfter[i]).map((v, i) => v ? i : -1).filter(i => i >= 0);
+  say(changedSlots.length === 1 && changedSlots[0] === 0,
+    '한 장의 한 층만 고치면 그 장만 바뀐다', '바뀐 장 [' + changedSlots.join(',') + ']');
+
+  await closeEd();          // 편집기가 열려 있으면 위 줄의 단추를 덮는다
+  // ── 굽기 확인 ───────────────────────────────────────────────────────────
+  // 계획서의 「끝났다는 조건」 1번 — 저장했을 때 나올 gif 가 화면과 한 점도 안 달라야 한다.
+  // 파일을 안 건드리고 재는 길(/api/dryrun)로 잰다. 층을 얹은 상태에서 재야 뜻이 있다.
+  await pg.locator('#drybtn').click();
+  await pg.waitForFunction(() => {
+    const t = document.getElementById('drylab');
+    return t && t.textContent.length > 0;
+  }, null, { timeout: 60000 });
+  const dry = await pg.locator('#drylab').textContent();
+  say(/^같음 \d+장/.test(dry), '층을 얹은 채로도 화면과 굽는 것이 같다', dry);
+  say(/조리법 \d+KB/.test(dry), '조리법이 몇 KB 인지 숫자로 나온다', dry);
 
   if (errs.length) { console.log('\n대본 오류:\n' + errs.join('\n')); fail++; }
 } finally {

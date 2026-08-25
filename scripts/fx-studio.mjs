@@ -26,7 +26,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, spawnSync } from 'child_process';
 import { PNG } from 'pngjs';
-import { readFrames, encodeGif, applyEdits, fillRatio, paletteOf, listItems, sourcesFor, origPath, nextSaveSlot, savePath, compositeInto } from './lib/fxgif.mjs';
+import { readFrames, encodeGif, applyEdits, fillRatio, paletteOf, listItems, sourcesFor, origPath, nextSaveSlot, savePath, compositeInto, composeSeq } from './lib/fxgif.mjs';
 
 // 경로는 전부 이 파일 위치 기준이다. 이동식 SSD라 드라이브 문자가 바뀌고,
 // 어느 폴더에서 실행하든 같게 동작해야 한다.
@@ -115,32 +115,9 @@ function save(body) {
   const { dir, kind, seq, fitMs, delayMs } = body;
   if (!dir || !kind || !Array.isArray(seq) || !seq.length) throw new Error('빈 조리법입니다');
 
-  const picked = [];
-  let w = 0, h = 0;
-
-  // 한 칸은 바닥 낱장 하나와, 그 위에 얹은 층들(over)로 이뤄진다.
-  // over 가 없으면 예전 조리법과 똑같은 뜻이라 옛 파일이 그대로 읽힌다.
-  const frameOf = (d, k, srcId, i, what) => {
-    const got = framesOf(d, k, srcId);
-    if (!got || !got.frames[i]) throw new Error(`${what} 낱장을 못 찾았습니다 (${d} ${k} ${srcId}·${i})`);
-    if (!w) { w = got.w; h = got.h; }
-    if (got.w !== w || got.h !== h)
-      throw new Error(`캔버스 크기가 다릅니다 — ${d} ${k} 는 ${got.w}×${got.h}, 이 종은 ${w}×${h}`);
-    return got.frames[i];
-  };
-
-  for (const step of seq) {
-    const px = new Uint8Array(frameOf(dir, kind, step.src, step.i, '바닥'));
-    if (step.erase && step.erase.length) applyEdits(px, w, h, step.erase);
-
-    for (const L of step.over || []) {
-      const lay = new Uint8Array(frameOf(L.dir || dir, L.kind || kind, L.src, L.i, '얹은 층'));
-      if (L.erase && L.erase.length) applyEdits(lay, w, h, L.erase);
-      compositeInto(px, lay, w, h, L.dx || 0, L.dy || 0, L.blend || 'normal',
-        L.op === undefined ? 1 : L.op);
-    }
-    picked.push(px);
-  }
+  // 층을 합치는 셈은 lib/fxgif.mjs 로 옮겼다 — 이 파일은 부르는 순간 서버가 떠서
+  // 검사에서 못 쓴다. 굽는 셈은 검사가 잴 수 있는 자리에 있어야 한다.
+  const { w, h, picked } = composeSeq({ dir, kind, seq }, framesOf);
 
   // 0번 장은 이펙트가 아직 없는 맨 스프라이트다. 다른 장과 같은 시간을 주면
   // 공격이 시작되기 전에 화면이 멈춰 있는 것처럼 보인다.
@@ -537,6 +514,23 @@ const server = createServer((req, res) => {
       return;
     }
 
+    // 「굽기 확인」 — 파일은 하나도 안 건드리고, 저장했을 때 «나올 알갱이» 만 돌려준다.
+    // 화면과 gif 가 갈리는 병은 저장한 뒤에야 드러나서, 드러날 땐 이미 아이들 화면에 가 있다.
+    // 저장 전에 재 볼 수 있어야 한다.
+    if (url.pathname === '/api/dryrun' && req.method === 'POST') {
+      let raw = '';
+      req.on('data', c => { raw += c; });
+      req.on('end', () => {
+        try {
+          const body = JSON.parse(raw);
+          const { w, h, picked } = composeSeq(body, framesOf);
+          json(res, 200, { ok: true, w, h,
+            frames: picked.map(p => Buffer.from(p.buffer, p.byteOffset, p.byteLength).toString('base64')) });
+        } catch (e) { json(res, 400, { error: e.message }); }
+      });
+      return;
+    }
+
     if (url.pathname === '/api/save' && req.method === 'POST') {
       let raw = '';
       req.on('data', c => { raw += c; });
@@ -736,6 +730,20 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .ed:not(.full) .cw{flex:1;min-width:0;max-height:70vh}
   /* 도구 칸이 «글 길이만큼» 넓어지면 그림 칸이 그만큼 줄어 배율이 뚝 떨어진다
      (실측: 안내문을 늘렸더니 6배가 2배로). 폭을 못 박고 글을 접는다. */
+  /* 타임라인 — 「만든 것」 줄 아래로 층마다 한 줄. 칸 너비를 그 줄과 맞춰 세로로 읽힌다. */
+  .tl{display:flex;flex-direction:column;gap:2px;margin-top:6px;width:100%;overflow-x:auto}
+  .tlrow{display:flex;gap:6px;align-items:center}
+  /* 줄 이름은 칸 «위» 에 얹는다 — 앞에 두면 칸이 위 줄과 어긋나 세로로 안 읽힌다 */
+  .tlname{align-self:flex-start;font-size:11px;font-weight:700;cursor:pointer;margin-top:4px;
+    white-space:nowrap;padding:1px 7px;border-radius:5px;
+    background:color-mix(in srgb,var(--accent) 14%,transparent)}
+  .tlcel{flex:0 0 auto;width:calc(66px * var(--z,1) + 10px);height:22px;border:1px solid var(--line);border-radius:5px;
+    background:var(--cell);cursor:pointer;display:flex;align-items:center;justify-content:center;
+    font-size:11px;font-weight:700;color:color-mix(in srgb,var(--ink) 55%,transparent)}
+  .tlcel.on{background:color-mix(in srgb,var(--accent) 22%,var(--cell));border-color:var(--accent);
+    color:var(--ink)}
+  .tlcel.off{opacity:.4}
+  .tlcel:hover{border-color:var(--accent)}
   .tools{display:flex;flex-direction:column;gap:8px;min-width:210px;max-width:280px;flex:0 0 auto}
   .tools .cap{white-space:normal;word-break:keep-all;line-height:1.5}
   .tools button{white-space:nowrap}
@@ -816,10 +824,20 @@ const CANVAS_OP={normal:'source-over',screen:'screen',add:'lighter'};
 // 다른 종에서 가져온 층은 손질을 안 붙인다. 손질 열쇠가 종을 안 담고 있어서
 // 'b1#2' 가 종끼리 부딪친다. 얹기만 하면 되는 자리라 이게 안전하다.
 const isForeign=L=>!!((L.dir&&L.dir!==cur.dir)||(L.kind&&L.kind!==cur.kind));
-const layURL=L=>isForeign(L)
+// 「그린 층」 — 바닥이 없는 층이다. 아무것도 없는 그림 한 점을 바닥으로 두고
+// 그 위에 손질만 얹는다. 굽는 쪽도 src:'blank' 를 투명한 낱장으로 받는다.
+const BLANK_PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const isBlank=L=>!!(L&&L.src==='blank');
+// 그린 층의 손질이 담기는 자리. 층마다 제 이름표를 갖는다 — 안 그러면 층끼리 섞인다.
+const layKey=L=>'lay:'+L.lid;
+const layURL=L=>isBlank(L)
+  ? (editedCache[layKey(L)]||BLANK_PNG)
+  : isForeign(L)
   ? '/frame.png?dir='+encodeURIComponent(L.dir)+'&kind='+L.kind+'&src='+L.src+'&i='+L.i
   : furl(L.src,L.i);
-const layName=L=>(isForeign(L)?(L.dir.replace(/^\\d+-/,'')+'·'):'')+shortSrc(L.src)+'·'+L.i;
+const layName=L=>isBlank(L)
+  ? ('그린 층'+(L.lid?(' '+String(L.lid).slice(-2)):''))
+  : ((isForeign(L)?(L.dir.replace(/^\\d+-/,'')+'·'):'')+shortSrc(L.src)+'·'+L.i);
 
 // 만들어 둔 합성본을 다시 쓰기 위한 이름표. 층 하나라도 바뀌면 달라져야 한다.
 //
@@ -842,7 +860,8 @@ function editSig(src,i){
 }
 const slotSig=s=>JSON.stringify([s.src,s.i,editSigKey(slotKey(s)),
   (s.over||[]).map(L=>[L.dir||'',L.kind||'',L.src,L.i,L.dx|0,L.dy|0,L.blend||'normal',
-    L.op===undefined?1:L.op,isForeign(L)?'':editSig(L.src,L.i)])]);
+    L.op===undefined?1:L.op,L.off?1:0,
+    isBlank(L)?('lay'+L.lid+':'+editSigKey(layKey(L))):isForeign(L)?'':editSig(L.src,L.i)])]);
 const compCache={};
 const nLayers=s=>1+((s.over&&s.over.length)||0);
 const slotImg=s=>editedCache[slotKey(s)]||rawURL(s.src,s.i);
@@ -859,13 +878,15 @@ function loadImgs(urls,done){
 function buildComposite(s,done){
   const key=slotSig(s);
   if(compCache[key]){done();return}
-  loadImgs([furl(s.src,s.i),...s.over.map(layURL)],imgs=>{
+  // 바닥은 «이 칸의» 손질까지 얹힌 그림이어야 한다. 재료 낱장 그림(furl)만 쓰면
+  // 이 칸에만 한 손질이 층 밑에서 사라져, 화면과 굽는 것이 갈린다.
+  loadImgs([slotImg(s),...s.over.map(layURL)],imgs=>{
     const base=imgs[0];
     if(!base){done();return}
     const c=document.createElement('canvas');c.width=base.width;c.height=base.height;
     const x=c.getContext('2d');x.drawImage(base,0,0);
     s.over.forEach((L,k)=>{
-      const g=imgs[k+1];if(!g)return;
+      const g=imgs[k+1];if(!g||L.off)return;   // 눈을 끈 층은 화면에서도 빠져야 굽는 것과 같다
       x.globalCompositeOperation=CANVAS_OP[L.blend||'normal']||'source-over';
       x.globalAlpha=L.op===undefined?1:L.op;
       x.drawImage(g,L.dx|0,L.dy|0);
@@ -875,15 +896,43 @@ function buildComposite(s,done){
   });
 }
 /** 아직 안 만든 합성본이 있으면 만들고 나서 부른다. 없으면 바로 부른다. */
-function ensureComposites(done){
-  const need=seq.filter(s=>s.over&&s.over.length&&!compCache[slotSig(s)]);
+/**
+ * 그린 층의 미리보기 그림을 챙긴다.
+ *
+ * 편집기를 거쳐 나온 층은 「적용」할 때 구워지지만, 칸을 «베끼거나 떼어 낼 때»,
+ * 또는 되돌리기로 손질이 되살아날 때는 편집기를 안 거친다. 그러면 손질은 있는데
+ * 미리보기 그림이 없어서 화면에는 빈 층으로 보이고, 굽는 쪽은 제대로 굽는다 —
+ * 화면과 gif 가 갈린다(실측: 층을 베낀 뒤 「굽기 확인」이 3장 갈림으로 잡았다).
+ */
+function ensureLayers(done){
+  const need=[];
+  seq.forEach(s=>(s.over||[]).forEach(L=>{
+    if(!isBlank(L))return;
+    const k=layKey(L);
+    if((edits[k]||[]).length&&!editedCache[k])need.push(L);
+  }));
   if(!need.length){done();return}
   let left=need.length;
-  need.forEach(s=>buildComposite(s,()=>{if(!--left)done()}));
+  need.forEach(L=>buildEdited(layKey(L),null,0,()=>{if(!--left)done()},{w:cur.w,h:cur.h}));
 }
-function buildEdited(k,src,i,done){
+function ensureComposites(done){
+  ensureLayers(()=>{
+    const need=seq.filter(s=>s.over&&s.over.length&&!compCache[slotSig(s)]);
+    if(!need.length){done();return}
+    let left=need.length;
+    need.forEach(s=>buildComposite(s,()=>{if(!--left)done()}));
+  });
+}
+function buildEdited(k,src,i,done,blankWH){
   const st=edits[k];
   if(!st||!st.length){delete editedCache[k];done&&done();return}
+  // 그린 층은 바닥이 없다 — 빈 칸에서 시작해 손질만 얹는다. 크기는 그 칸에서 받아 온다.
+  if(blankWH){
+    const c=document.createElement('canvas');c.width=blankWH.w;c.height=blankWH.h;
+    const x=c.getContext('2d',{willReadFrequently:true});
+    for(const t of st)applyOne(x,t,blankWH.w,blankWH.h);
+    editedCache[k]=c.toDataURL('image/png');done&&done();return;
+  }
   const img=new Image();
   img.onload=()=>{
     const c=document.createElement('canvas');c.width=img.width;c.height=img.height;
@@ -1043,6 +1092,11 @@ function render(){
   // 단추는 「저장」 하나다. 올리는 건 손을 놓으면 알아서 한 번에 나간다 —
   // 아래 상태줄(#pubbar)이 언제 나가는지 말해 주고, 거기서 앞당기거나 미룰 수 있다.
   const sv=el('button','primary');sv.textContent='저장';sv.disabled=!seq.length;sv.onclick=save;b.appendChild(sv);
+  // 저장 «전에» 화면과 굽는 것이 같은지 재 본다. 파일은 안 건드린다.
+  const dry=el('button');dry.id='drybtn';dry.textContent='굽기 확인';dry.disabled=!seq.length;
+  dry.title='저장했을 때 나올 그림을 지금 화면과 한 점씩 맞대 봅니다 (파일은 안 건드립니다)';
+  dry.onclick=dryrun;b.appendChild(dry);
+  const dlab=el('span','cap');dlab.id='drylab';b.appendChild(dlab);
   const qb=el('button');qb.textContent='끝내기';
   qb.title='안 올린 게 있으면 올리고 편집기를 끕니다';
   qb.onclick=async()=>{
@@ -1135,7 +1189,7 @@ function strip(s){
     const m=el('div','m');m.textContent=i+' · '+f+'%'+(blank?' 빔':'');b.appendChild(m);
     b.onclick=()=>{const c=commitStrokes();openEd={src:s.id,i,key:K(s.id,i)};mountedKey=null;
       const go=()=>{render();setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
-      if(c)buildEdited(c.key,c.src,c.i,go);else go()};
+      if(c)buildEdited(c.key,c.src,c.i,go,c.blank?{w:c.w,h:c.h}:null);else go()};
     const a=el('button','add');a.textContent='＋';a.title='만든 것에 담기';
     a.onclick=e=>{e.stopPropagation();push();seq.push({src:s.id,i});render()};b.appendChild(a);
     b.addEventListener('dragstart',e=>{drag={kind:'add',src:s.id,i};b.classList.add('dragging');e.dataTransfer.effectAllowed='copy'});
@@ -1194,7 +1248,7 @@ function seqRow(){
     // 같은 낱장을 다시 찾게 만들면 안 된다.
     b.onclick=()=>{const c=commitStrokes();openEd={src:s.src,i:s.i,key:slotOwn(s)};mountedKey=null;
       const go=()=>{render();setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
-      if(c)buildEdited(c.key,c.src,c.i,go);else go()};
+      if(c)buildEdited(c.key,c.src,c.i,go,c.blank?{w:c.w,h:c.h}:null);else go()};
     const ops=el('div','ops');
     [['✎','edit'],['層','lay'],['⧉','dup'],['◀',-1],['▶',1],['×',0]].forEach(([t,d])=>{
       const x=el('button',d===0?'x':'');x.textContent=t;
@@ -1226,7 +1280,107 @@ function seqRow(){
     if(drag.kind==='add')seq.splice(at,0,{src:drag.src,i:drag.i});
     else{const [m]=seq.splice(drag.n,1);seq.splice(at>drag.n?at-1:at,0,m)}
     clearMark();drag=null;render()});
-  row.appendChild(sp);return row;
+  // 줄과 타임라인은 «세로로» 이어야 칸이 위아래로 맞는다
+  const col=el('div');col.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column';
+  col.appendChild(sp);
+  const tl=timeline();
+  if(tl){
+    col.appendChild(tl);
+    // 줄이 길어 옆으로 밀릴 때 위아래가 따로 놀면 세로로 못 읽는다 — 함께 민다.
+    let lock=false;
+    const tie=(a,b)=>a.addEventListener('scroll',()=>{
+      if(lock)return;lock=true;b.scrollLeft=a.scrollLeft;lock=false});
+    tie(sp,tl);tie(tl,sp);
+    // 칸 너비는 «재서» 맞춘다. 칸 아래 단추 줄이 폭을 늘려서 그림 크기로 셈하면 어긋난다.
+    requestAnimationFrame(()=>{
+      const slots=[...sp.children].filter(c=>c.classList.contains('slot'));
+      tl.querySelectorAll('.tlrow').forEach(r=>{
+        [...r.children].forEach((c,i)=>{if(slots[i])c.style.width=slots[i].offsetWidth+'px'});
+      });
+    });
+  }
+  row.appendChild(col);
+  return row;
+}
+
+// ── 타임라인 ────────────────────────────────────────────────────────────────
+// 「만든 것」 가로 줄은 그대로 두고, 층이 생기면 그 «아래로» 한 줄씩 펼친다.
+// 층이 없으면 예전 화면과 똑같다 — 손에 익은 것이 안 바뀐다.
+//
+//   만든 것   [0][1][2][3][4][5][6]
+//   그린 층A  [■][■][ ][■][ ][ ][ ]      ■ 있는 칸 · 빈 것은 눌러서 만든다
+//
+// 줄(track)은 «같은 층이 여러 장에 걸쳐 있는 것» 이고, 칸(cel)은 그 장의 그림이다.
+// 그린 층은 칸마다 제 그림(lid)을 갖고, 재료 낱장을 얹은 층은 그 낱장 자체로 묶인다.
+const trackOf=L=>L.track||(isBlank(L)?('b:'+L.lid)
+  :('m:'+(L.dir||'')+'|'+(L.kind||'')+'|'+L.src+'|'+L.i));
+/** 지금 줄 목록. 아래 칸부터 훑어 처음 나온 순서대로 세운다. */
+function tracks(){
+  const seen=new Map();
+  seq.forEach((s,n)=>{(s.over||[]).forEach(L=>{
+    const t=trackOf(L);
+    if(!seen.has(t))seen.set(t,{t,name:layName(L),blank:isBlank(L)});
+  })});
+  return [...seen.values()];
+}
+const celAt=(s,t)=>(s.over||[]).find(L=>trackOf(L)===t)||null;
+// 복사해 둔 칸(줄과 그림 번호). 「함께 쓰기」와 「사본」이 이걸 쓴다.
+let celClip=null;
+/** 그 그림을 몇 장이 함께 쓰는지. 둘 이상이면 «이어 쓴 칸» 이다. */
+const linkCount=lid=>seq.reduce((n,s)=>n+((s.over||[]).some(L=>L.lid===lid)?1:0),0);
+function timeline(){
+  const ts=tracks();
+  if(!ts.length)return null;                 // 층이 없으면 예전 그대로다
+  const box=el('div','tl');
+  ts.slice().reverse().forEach(tr=>{         // 위에 그려지는 층이 위에 오게
+    // 줄 이름을 칸 «앞» 에 두면 칸이 위 줄과 어긋나 세로로 안 읽힌다. 위에 얹는다.
+    const head=el('div','tlname');
+    head.textContent=tr.name;
+    head.title='이 줄 전체를 켜고 끕니다';
+    const anyOn=seq.some(s=>{const L=celAt(s,tr.t);return L&&!L.off});
+    head.onclick=()=>{push();seq.forEach(s=>{const L=celAt(s,tr.t);
+      if(L){if(anyOn)L.off=1;else delete L.off}});render()};
+    if(!anyOn)head.style.opacity='.45';
+    box.appendChild(head);
+    const r=el('div','tlrow');
+    seq.forEach((s,n)=>{
+      const L=celAt(s,tr.t);
+      const c=el('div','tlcel'+(L?' on':'')+(L&&L.off?' off':''));
+      c.title=L?(tr.blank?'눌러서 이 칸의 층을 고칩니다':'이 칸에 얹혀 있습니다')
+              :(tr.blank?'눌러서 이 장에도 이 층을 만듭니다':'이 장에는 없습니다');
+      const linked=L&&tr.blank&&linkCount(L.lid)>1;
+      if(L&&tr.blank){
+        const n2=(edits[layKey(L)]||[]).length;
+        c.textContent=(linked?'≡':'')+(n2?String(n2):'·');
+        if(linked)c.title='이 그림을 '+linkCount(L.lid)+'장이 함께 씁니다 — 고치면 다 바뀝니다';
+      }else if(L)c.textContent='■';
+      c.onclick=e=>{
+        if(L){
+          if(e.altKey){celClip={track:tr.t,lid:L.lid};toast('이 칸을 복사했습니다 — 빈 칸에 Alt+누르면 사본, Shift+누르면 함께 쓰기');return}
+          if(tr.blank){const k=(s.over||[]).indexOf(L);openLayer(n,k)}
+          else{selSlot=n;render()}
+          return;
+        }
+        if(!tr.blank){selSlot=n;render();return}
+        push();
+        s.over=s.over||[];
+        // Shift = 이어 쓰기(같은 그림을 함께 씀) · Alt = 사본(따로 논다) · 그냥 = 새로 그리기
+        let lid=newUid();
+        if(celClip&&celClip.track===tr.t){
+          if(e.shiftKey)lid=celClip.lid;                       // 함께 쓴다
+          else if(e.altKey){                                   // 사본 — 고쳐도 남이 안 바뀐다
+            edits['lay:'+lid]=(edits['lay:'+celClip.lid]||[]).map(cloneStroke);
+          }
+        }
+        s.over.push({src:'blank',i:0,lid,track:tr.t,dx:0,dy:0,blend:'normal',op:1});
+        render();
+        if(!(celClip&&celClip.track===tr.t&&(e.shiftKey||e.altKey)))openLayer(n,s.over.length-1);
+      };
+      r.appendChild(c);
+    });
+    box.appendChild(r);
+  });
+  return box;
 }
 // ── 다른 종 재료 ────────────────────────────────────────────────────────────
 // 「스프라이트 여러 개를 섞는다」 는 종을 넘나든다는 뜻이기도 하다. 다른 종의
@@ -1300,8 +1454,22 @@ function layersPanel(n){
   (s.over||[]).slice().reverse().forEach((L,rev)=>{
     const k=s.over.length-1-rev;
     const r=el('div','lrow');
+    if(L.off)r.style.opacity='.45';
     const im=el('img');im.src=layURL(L);r.appendChild(im);
-    const nm=el('div','lname');nm.textContent=layName(L);r.appendChild(nm);
+    const nm=el('div','lname');nm.textContent=layName(L);
+    if(isBlank(L)){
+      // 그린 층은 «고치는» 것이 본업이다 — 이름을 누르면 바로 그 층을 연다.
+      nm.style.cursor='pointer';nm.title='이 층을 열어 고칩니다';
+      nm.onclick=()=>openLayer(n,k);
+      const n2=(edits[layKey(L)]||[]).length;
+      const cnt=el('span','cap');cnt.textContent=n2?(' 손질 '+n2):' 비어 있음';nm.appendChild(cnt);
+    }
+    r.appendChild(nm);
+    const eye=el('button');eye.textContent=L.off?'꺼짐':'보임';
+    eye.title='끄면 굽기에서 뺍니다 — 지우지 않고 잠깐 빼 볼 때 씁니다';
+    eye.setAttribute('aria-pressed',String(!L.off));
+    eye.onclick=()=>{push();if(L.off)delete L.off;else L.off=1;render()};
+    r.appendChild(eye);
 
     const bl=el('select');bl.title='합성 방식';
     BLENDS.forEach(([v,t])=>{const o=el('option');o.value=v;o.textContent=t;
@@ -1352,10 +1520,58 @@ function layersPanel(n){
   rows.appendChild(base);
   box.appendChild(rows);
 
+  // 「그린 층」 — 바닥이 없는 빈 층 하나를 얹고 거기에 직접 그린다.
+  // 본체를 안 건드리고 불티·빛 같은 걸 따로 올렸다 내렸다 할 수 있는 자리다.
+  const addRow=el('div','cur');
+  const addBlank=el('button');addBlank.id='addblank';addBlank.textContent='＋ 그린 층';
+  addBlank.title='아무것도 없는 층을 하나 얹습니다. 이름을 누르면 그 층만 따로 그릴 수 있습니다.';
+  addBlank.onclick=()=>{
+    push();
+    s.over=s.over||[];
+    s.over.push({src:'blank',i:0,lid:newUid(),dx:0,dy:0,blend:'normal',op:1});
+    render();
+    // 얹자마자 열어 준다 — 얹기만 하고 «그다음 뭘 눌러야 하지» 로 끝나면 안 된다.
+    openLayer(n,s.over.length-1);
+  };
+  addRow.appendChild(addBlank);
+  box.appendChild(addRow);
+
   const tip=el('div','cap');
   tip.textContent='재료 줄의 낱장을 이 칸 위로 끌어다 놓으면 층으로 얹힙니다. 다른 종 재료는 위 「다른 종 불러오기」 로 가져오세요.';
   box.appendChild(tip);
   return box;
+}
+/**
+ * 그 칸의 그 층을 편집기로 연다.
+ *
+ * 바닥 낱장을 열 때와 달리 «바닥 그림이 없다». 크기만 그 칸에서 빌리고 빈 칸에서 시작한다.
+ * 손질은 층마다 제 이름표(lay:<lid>)에 담기므로 층끼리 안 섞인다.
+ */
+/**
+ * 이어 쓰던 칸을 «이 장만» 제 그림으로 떼어 낸다.
+ * 지금 것을 그대로 베껴서 떼므로 보이는 그림은 안 바뀐다 — 이제부터 남남일 뿐이다.
+ */
+function unlinkCel(){
+  if(!openEd||!openEd.blank)return;
+  const s=seq[openEd.slot];if(!s)return;
+  const L=(s.over||[]).find(x=>x.lid===openEd.lid);if(!L)return;
+  commitStrokes();                                   // 고치던 것부터 제자리에 담고
+  push();
+  const nid=newUid();
+  edits['lay:'+nid]=(edits[layKey(L)]||[]).map(cloneStroke);
+  L.lid=nid;
+  openEd.key='lay:'+nid;openEd.lid=nid;mountedKey=null;
+  render();
+  toast('이 장만 따로 떼었습니다 — 이제 고쳐도 다른 장은 안 바뀝니다','ok');
+}
+function openLayer(n,k){
+  const s=seq[n],L=s.over&&s.over[k];
+  if(!L||!isBlank(L))return;
+  const c=commitStrokes();
+  openEd={src:s.src,i:s.i,key:layKey(L),blank:1,lid:L.lid,slot:n};
+  mountedKey=null;
+  if(c)buildEdited(c.key,c.src,c.i,()=>render(),c.blank?{w:c.w,h:c.h}:null);
+  else render();
 }
 
 let drag=null,mark=null,selSlot=null;
@@ -1438,6 +1654,53 @@ function play(){
     const d=D[k];k=(k+1)%seq.length;playT=setTimeout(step,d)};
   step();
 }
+/** 지금 화면을 «조리법» 으로 적는다. 저장과 굽기 확인이 같은 것을 보내야 뜻이 있다. */
+function recipeSteps(){
+  return seq.map(s=>({src:s.src,i:s.i,erase:slotEdits(s),
+    over:(s.over||[]).map(L=>({dir:L.dir,kind:L.kind,src:L.src,i:L.i,dx:L.dx|0,dy:L.dy|0,
+      blend:L.blend||'normal',op:L.op===undefined?1:L.op,off:L.off?1:0,
+      erase:isBlank(L)?(edits[layKey(L)]||[])
+        :isForeign(L)?[]:(edits[K(L.src,L.i)]||[])}))}));
+}
+/**
+ * 「굽기 확인」 — 저장했을 때 나올 알갱이를 서버에서 받아, 지금 화면과 한 점씩 맞대 본다.
+ *
+ * 화면과 gif 가 갈리는 병은 저장한 «뒤에» 드러난다. 드러날 땐 이미 아이들 화면에 가 있다.
+ * 파일은 하나도 안 건드리므로 아무 때나 눌러도 된다.
+ */
+async function dryrun(){
+  if(!cur||!seq.length){toast('먼저 낱장을 담으세요','err');return}
+  commitStrokes();
+  const btn=document.getElementById('drybtn');
+  if(btn){btn.disabled=true;btn.textContent='재는 중…'}
+  try{
+    const r=await fetch('/api/dryrun',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dir:cur.dir,kind:cur.kind,seq:recipeSteps()})});
+    const j=await r.json();
+    if(!j.ok){toast('굽기 확인 실패 — '+(j.error||''),'err');return}
+    await new Promise(done=>ensureComposites(done));
+    const urls=seq.map(slotURL);
+    const imgs=await new Promise(done=>loadImgs(urls,done));
+    const c=document.createElement('canvas');c.width=j.w;c.height=j.h;
+    const x=c.getContext('2d',{willReadFrequently:true});
+    let bad=0,firstBad=-1,worst=0;
+    for(let n=0;n<seq.length;n++){
+      const im=imgs[n];if(!im)continue;
+      x.clearRect(0,0,j.w,j.h);x.drawImage(im,0,0);
+      const shown=x.getImageData(0,0,j.w,j.h).data;
+      const baked=fromB64(j.frames[n]);
+      let diff=0;
+      for(let i=0;i<shown.length;i++)if(shown[i]!==baked[i])diff++;
+      if(diff){bad++;if(firstBad<0)firstBad=n;if(diff>worst)worst=diff}
+    }
+    if(bad)toast('갈립니다 — '+bad+'장이 화면과 다릅니다 (처음은 '+(firstBad+1)+'번째, 최대 '+worst+'자)','err');
+    else toast(seq.length+'장 모두 화면과 굽는 것이 같습니다','ok');
+    const kb=Math.round(JSON.stringify(recipeSteps()).length/1024);
+    const el0=document.getElementById('drylab');
+    if(el0)el0.textContent=(bad?('갈림 '+bad+'장'):('같음 '+seq.length+'장'))+' · 조리법 '+kb+'KB';
+  }catch(e){ toast('굽기 확인 실패 — '+e.message,'err') }
+  finally{ if(btn){btn.disabled=false;btn.textContent='굽기 확인'} }
+}
 async function save(){
   commitStrokes();          // 그리다 만 붓질도 저장에 담는다 — 「적용」을 잊어도 잃지 않게
   stampUids();
@@ -1447,10 +1710,7 @@ async function save(){
   const svOld=sv?sv.textContent:'';
   if(sv){sv.disabled=true;sv.textContent='저장 중…'}
   toast('저장하는 중…');
-  const steps=seq.map(s=>({src:s.src,i:s.i,erase:slotEdits(s),
-    over:(s.over||[]).map(L=>({dir:L.dir,kind:L.kind,src:L.src,i:L.i,dx:L.dx|0,dy:L.dy|0,
-      blend:L.blend||'normal',op:L.op===undefined?1:L.op,
-      erase:isForeign(L)?[]:(edits[K(L.src,L.i)]||[])}))}));
+  const steps=recipeSteps();
   const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({dir:cur.dir,kind:cur.kind,seq:steps,fitMs:fit,leadShort})});
   const j=await r.json();
@@ -2372,7 +2632,8 @@ function commitStrokes(){
   if(JSON.stringify(now)===JSON.stringify(strokes))return null;
   push();
   if(strokes.length)edits[k]=strokes.slice();else delete edits[k];
-  return {key:k,src:openEd.src,i:openEd.i};
+  return {key:k,src:openEd.src,i:openEd.i,blank:!!openEd.blank,
+    w:base?base.w:0,h:base?base.h:0};
 }
 function editor(){
   const wrap=el('div','ed'+(edFull?' full':''));
@@ -2390,7 +2651,7 @@ function editor(){
   fs.onclick=()=>{edFull=!edFull;render()};h.appendChild(fs);
   const cls=el('button','close');cls.textContent='닫기';cls.style.marginLeft='0';
   cls.onclick=()=>{const c=commitStrokes();openEd=null;mountedKey=null;
-    if(c)buildEdited(c.key,c.src,c.i,()=>render());else render()};h.appendChild(cls);
+    if(c)buildEdited(c.key,c.src,c.i,()=>render(),c.blank?{w:c.w,h:c.h}:null);else render()};h.appendChild(cls);
   wrap.appendChild(h);
 
   const main=el('div','edmain');
@@ -2501,6 +2762,18 @@ function editor(){
   symBtn.setAttribute('aria-pressed',String(symOn));
   symBtn.onclick=()=>{symOn=!symOn;symBtn.setAttribute('aria-pressed',String(symOn));drawSel()};
   shRow.append(fillBtn,symBtn);T.appendChild(shRow);
+
+  // 이어 쓴 칸이면 «고치면 다 바뀐다» 는 것을 눈에 보이게 말해 준다.
+  // 공유하는 것을 모르고 고치면 남의 장까지 바뀌는데, 그건 한참 뒤에야 드러난다.
+  if(openEd.blank&&openEd.lid&&linkCount(openEd.lid)>1){
+    const warn=el('div','cur');warn.style.flexWrap='wrap';
+    const wt=el('span','cap');wt.style.color='var(--drop)';
+    wt.textContent='이 그림은 '+linkCount(openEd.lid)+'장이 함께 씁니다 — 고치면 다 바뀝니다.';
+    const un=el('button');un.id='unlink';un.textContent='따로 떼기';
+    un.title='이 장만 제 그림을 갖게 합니다. 지금 것을 베껴서 떼므로 보이는 건 안 바뀝니다.';
+    un.onclick=unlinkCel;
+    warn.append(wt,un);T.appendChild(warn);
+  }
 
   // 「모든 장에」 — 이펙트는 12장이 한 몸이라, 한 장만 고치는 일이 오히려 드물다.
   const allRow=el('div','cur');
@@ -2705,7 +2978,9 @@ function redraw(){
   // 조각이 떠 있는 동안은 밑칠을 처음부터 다시 하지 않는다 — 끌 때마다 손질을
   // 수십 개씩 다시 얹으면 손이 무거워진다. 담아 둔 «조각 없는 그림» 을 도로 깐다.
   if(flt&&fltBase)c.putImageData(fltBase,0,0);
-  else{c.clearRect(0,0,base.w,base.h);c.drawImage(base.img,0,0);
+  else{c.clearRect(0,0,base.w,base.h);
+    // 그린 층은 «바닥이 없다». 크기만 그 칸에서 빌리고 빈 칸에서 시작한다.
+    if(!openEd||!openEd.blank)c.drawImage(base.img,0,0);
     for(const s of strokes)applyOne(c,s,base.w,base.h)}
   // 미리보기와 내려놓기가 «같은 손질» 을 쓴다. 어긋날 자리가 아예 없다.
   for(const s of fltStrokes())applyOne(c,s,base.w,base.h);
@@ -2938,7 +3213,15 @@ function drawGrid(gr,z){
  */
 function drawOnion(on){
   const c=on.getContext('2d');c.clearRect(0,0,on.width,on.height);
-  if(!onionOn||!openEd)return;
+  if(!openEd)return;
+  if(openEd.blank){
+    // 그린 층은 빈 칸이라 «어디에» 그리는지 알 수가 없다. 그 칸 그림을 옅게 깔아 준다.
+    const im=new Image();
+    im.onload=()=>{c.globalAlpha=.4;c.drawImage(im,0,0);c.globalAlpha=1};
+    im.src=furl(openEd.src,openEd.i);
+    return;
+  }
+  if(!onionOn)return;
   const n=meta[openEd.src]&&meta[openEd.src].fills?meta[openEd.src].fills.length:0;
   const jobs=[];
   for(let k=1;k<=onionN;k++){

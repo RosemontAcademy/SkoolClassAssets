@@ -580,7 +580,8 @@ server.on('listening', () => {
   console.log('  자산 폴더: ' + FXD);
   console.log('  끝낼 때는 이 창에서 Ctrl+C  (창을 닫으면 편집기도 꺼집니다)');
   console.log('');
-  if (OPEN) spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore' }).unref();
+  // cmd 를 거치면 주소의 & 뒤가 잘린다. rundll32 는 명령줄을 다시 파싱하지 않는다.
+  if (OPEN) spawn('rundll32', ['url.dll,FileProtocolHandler', url], { detached: true, stdio: 'ignore' }).unref();
 });
 function open(port) { server.__port = port; server.listen(port, '127.0.0.1'); }
 open(WANT_PORT);
@@ -899,8 +900,12 @@ async function boot(){
   // SkoolClass 설정의 「FX 편집기」 단추가 ?dir=25-pikachu&kind=attack 로 부른다.
   // 62개 목록에서 눈으로 찾게 하면 단추를 만든 의미가 없다.
   const q=new URLSearchParams(location.search);
-  if(q.get('dir')){
-    const want=q.get('dir')+' '+(q.get('kind')||'attack');
+  // 항목은 «한 칸짜리» item 으로 받는다. dir 과 kind 를 따로 주면 주소에 & 가 들어가는데,
+  // 윈도우에서 브라우저를 여는 길에 cmd 가 그걸 명령 구분자로 읽어 뒤를 잘라 먹었다
+  // (실측: ?dir=53-persian&kind=attacked → ?dir=53-persian). 그래서 앞모습 단추를 눌러도
+  // 늘 뒷모습이 열렸다(2026-08-25 원장님). dir/kind 는 옛 주소 호환으로 남겨 둔다.
+  if(q.get('item')||q.get('dir')){
+    const want=q.get('item') || (q.get('dir')+' '+(q.get('kind')||'attack'));
     const hit=items.find(it=>it.id===want);
     if(hit){
       load(hit);

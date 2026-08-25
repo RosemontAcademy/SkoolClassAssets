@@ -28,6 +28,8 @@ function parseArg(raw) {
   try {
     const q = raw.includes('?') ? raw.slice(raw.indexOf('?') + 1) : '';
     const p = new URLSearchParams(q);
+    const item = p.get('item');
+    if (item) { const [d, k] = item.trim().split(' '); return { dir: d || '', kind: k || '' }; }
     return { dir: p.get('dir') || '', kind: p.get('kind') || '' };
   } catch { return {}; }
 }
@@ -42,10 +44,13 @@ const ping = async (ms = 700) => {
   } catch { return false; }
 };
 
-const openBrowser = url => spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore' }).unref();
+// cmd 로 열면 주소의 & 뒤가 잘려 나간다(실측). rundll32 는 명령줄을 다시 파싱하지 않는다.
+const openBrowser = url => spawn('rundll32', ['url.dll,FileProtocolHandler', url], { detached: true, stdio: 'ignore' }).unref();
 
 const { dir, kind } = parseArg(process.argv[2]);
-const target = BASE + (dir ? `/?dir=${encodeURIComponent(dir)}&kind=${encodeURIComponent(kind || 'attack')}` : '/');
+// & 가 없는 «한 칸짜리» 주소로 넘긴다 — 중간에 무엇을 거치든 안 잘린다.
+const target = BASE + (dir ? `/?item=${encodeURIComponent(dir + ' ' + (kind || 'attack'))}` : '/');
+if (process.argv.includes('--print')) { console.log(target); process.exit(0); }
 
 if (await ping()) {
   openBrowser(target);                       // 이미 켜져 있다 — 탭만 연다

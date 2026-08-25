@@ -769,6 +769,12 @@ const PANEL_H=Math.min(540,Math.max(300,Math.round(CANVAS[1]*0.56)));
 const SCENE_H=CANVAS[1]-PANEL_H;
 let items=[],cur=null,meta={},seq=[],edits={},fit=3000,zoom=1,playT=null,openEd=null;
 let leadShort=true,undoStack=[],redoStack=[],blend='screen',showBg=true,showSlots=false,pinGame=true;
+// 복사해 둔 칸. 층까지 통째로 담는다 — 공들여 얹은 층을 다시 얹게 만들면 안 된다.
+// 손질(붓질)은 낱장에 딸린 것이라 복제해도 그대로 따라온다(열쇠가 src+장번호라서).
+let clip=null;
+// 옛 재료 줄(원본·굽기·저장본)을 접어 둔다. 리자몽처럼 여러 번 손본 종은 줄이 다섯도
+// 되어서, 정작 지금 쓰는 것과 만든 것이 화면 아래로 밀린다(2026-08-25 원장님).
+let showOldSources=false;
 const rawURL=(src,i)=>'/frame.png?dir='+encodeURIComponent(cur.dir)+'&kind='+cur.kind+'&src='+src+'&i='+i;
 // 손질한 낱장은 서버가 아니라 여기서 만든 그림을 쓴다. 안 그러면 지우거나 칠한 것이
 // 썸네일·조립 미리보기·게임 화면에 안 보이고, 저장한 뒤에야 나타난다.
@@ -970,7 +976,19 @@ function render(){
 
   stripTimers.forEach(clearInterval);stripTimers=[];
   const W=$('#work');W.innerHTML='';
-  cur.sources.forEach(s=>W.appendChild(strip(s)));
+  // 원본과 «지금 쓰는 것» 은 늘 보인다. 굽기·저장본 기록은 접어 둔다 —
+  // 필요할 때만 펼치면 된다. 안 그러면 줄이 다섯이 되어 만든 것이 화면 밖으로 밀린다.
+  const isOld=s=>/^(b|s)\\d+$/.test(s.id);
+  const shown=cur.sources.filter(s=>showOldSources||!isOld(s));
+  const hidden=cur.sources.length-shown.length;
+  shown.forEach(s=>W.appendChild(strip(s)));
+  if(hidden>0||showOldSources){
+    const t=el('button');t.style.margin='2px 0 8px';
+    t.textContent=showOldSources?'옛 판 접기':('옛 판 '+hidden+'줄 펼치기');
+    t.title='굽기·저장본 기록입니다. 지금 쓰는 것과 원본은 항상 보입니다.';
+    t.onclick=()=>{showOldSources=!showOldSources;render()};
+    W.appendChild(t);
+  }
   extras.forEach(x=>W.appendChild(extraStrip(x)));
   W.appendChild(foreignPicker());
   W.appendChild(seqRow());
@@ -1053,6 +1071,11 @@ function strip(s){
   }
   row.appendChild(sp);return row;
 }
+/** 칸 하나를 통째로 베낀다. 층 목록까지 새 배열로 뜬다 —
+    얕게 베끼면 한쪽 층을 옮겼을 때 다른 칸도 같이 움직인다. */
+function copySlot(s){
+  return { src:s.src, i:s.i, over:(s.over||[]).map(L=>Object.assign({},L)) };
+}
 function seqRow(){
   const row=el('div','row seq');
   const box=el('div');const st=el('div','stage');const im=el('img');im.id='seqimg';st.appendChild(im);box.appendChild(st);
@@ -1088,12 +1111,14 @@ function seqRow(){
       const go=()=>{render();setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
       if(c)buildEdited(c.src,c.i,go);else go()};
     const ops=el('div','ops');
-    [['✎','edit'],['層','lay'],['◀',-1],['▶',1],['×',0]].forEach(([t,d])=>{
+    [['✎','edit'],['層','lay'],['⧉','dup'],['◀',-1],['▶',1],['×',0]].forEach(([t,d])=>{
       const x=el('button',d===0?'x':'');x.textContent=t;
       if(d==='lay')x.title='이 칸의 층 다루기';
+      if(d==='dup')x.title='이 칸을 바로 뒤에 하나 더 (Ctrl+C · Ctrl+V 로도 됩니다)';
       x.onclick=e=>{e.stopPropagation();
         if(d==='edit'){b.onclick();return}
         if(d==='lay'){selSlot=(selSlot===n?null:n);render();return}
+        if(d==='dup'){push();seq.splice(n+1,0,copySlot(seq[n]));selSlot=null;render();return}
         push();
         if(d===0)seq.splice(n,1);
         else{const j=n+d;if(j<0||j>=seq.length)return;[seq[n],seq[j]]=[seq[j],seq[n]]}
@@ -1349,6 +1374,16 @@ async function save(){
  * 늘 보여야 한다 — 예전에는 저장만 하고 안 올린 걸 화면으로 알 수가 없었다
  * (리자몽이 실제로 그렇게 하루를 넘겼다).
  */
+/** 한쪽 구석에 잠깐 뜨는 쪽지. 화면을 다시 그리지 않고 알려 줘야 할 때 쓴다. */
+function toast(text){
+  const old=document.getElementById('toast');if(old)old.remove();
+  const t=el('div');t.id='toast';t.textContent=text;
+  t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:200;'
+    +'background:var(--surface);border:1px solid var(--accent);color:var(--ink);'
+    +'padding:8px 14px;border-radius:10px;font-size:13px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.35)';
+  document.body.appendChild(t);
+  setTimeout(()=>{t.remove()},1800);
+}
 function pubBar(){
   setTimeout(beat,0);
   const d=el('div','msg');d.id='pubbar';d.style.display='flex';d.style.alignItems='center';d.style.gap='10px';
@@ -1396,6 +1431,22 @@ addEventListener('keydown',e=>{
   // 캔바를 쓰다 온 손에는 «안 돌아간다» 로 느껴진다.
   if(k==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); }
   if(k==='y'){ e.preventDefault(); redo(); }
+  if(k==='c'){
+    // 글자를 고르고 있으면 그건 진짜 복사다 — 뺏지 않는다.
+    if(String(getSelection()||'').length) return;
+    if(selSlot!==null&&seq[selSlot]){ e.preventDefault(); clip=copySlot(seq[selSlot]); toast('칸을 복사했습니다 — Ctrl+V 로 붙입니다'); }
+    else if(openEd){ e.preventDefault(); clip={src:openEd.src,i:openEd.i,over:[]}; toast('이 낱장을 복사했습니다 — Ctrl+V 로 붙입니다'); }
+    return;
+  }
+  if(k==='v'){
+    if(!clip) return;
+    e.preventDefault(); push();
+    const at = selSlot!==null ? selSlot+1 : seq.length;
+    seq.splice(at,0,copySlot(clip));
+    selSlot=at; render();
+    toast('붙였습니다');
+    return;
+  }
   if(k==='s'){ e.preventDefault();
     // 낱장 편집 중이면 '이 낱장에 적용', 아니면 전체 저장. 손이 가는 곳이 다르다.
     if(openEd){ document.getElementById('eapply')?.click(); }

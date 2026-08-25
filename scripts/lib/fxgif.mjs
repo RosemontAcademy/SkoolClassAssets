@@ -109,7 +109,60 @@ export function encodeGif(w, h, frames, delayMs) {
  *   { t:'r', x, y, w, h }                네모나게 지우기
  *   { t:'p', x, y, r, color:[r,g,b] }    동그랗게 칠하기
  *   { t:'swap', from:[r,g,b], to:[r,g,b], tol }  그 색을 저 색으로 (tol = 허용 오차)
+ *   { t:'blit', sx,sy,sw,sh, dx,dy,dw,dh, rot,fx,fy,cut }  이 그림 안의 조각을 옮기기
+ *   { t:'stamp', sw,sh,data, dx,dy,dw,dh, rot,fx,fy }      다른 낱장에서 온 조각 붙이기
+ *   { t:'em', x,y,w,h, mask }            표대로 비우기(올가미·마술봉)
+ *   { t:'pm', x,y,w,h, mask, color }     표대로 칠하기(직선·네모·타원)
+ *   { t:'sh', x,y,w,h, steps, dir, ramp } 명암 — 쓰던 색들 사이를 한 눈금씩
+ *   { t:'stamps', sw,sh,data, at:[[x,y],..] } 고른 조각을 붓으로 툭툭
+ *   { t:'adj', x,y,w,h, mask, hue,sat,val,con }  색 손보기
+ *   { t:'shift', dx,dy }                 그림 전체 밀기
  */
+/**
+ * 색 손보기 한 판. 편집기와 굽는 쪽이 **글자 그대로 같은 셈** 이어야 하므로
+ * 두 파일에 같은 함수를 둔다(scripts/test-strokes.mjs 가 매번 둘을 맞대 본다).
+ *   hue -180~180 도 돌리기 · sat/val 0~200 % · con -100~100 대비
+ * 차례: 색조·진하기·밝기 를 먼저, 대비를 마지막에. 투명한 점은 안 건드린다.
+ */
+function adjPixels(px,w,h,s){
+  const X0=Math.max(0,Math.floor(s.x??0)),Y0=Math.max(0,Math.floor(s.y??0));
+  const X1=Math.min(w,Math.ceil((s.x??0)+(s.w??w))),Y1=Math.min(h,Math.ceil((s.y??0)+(s.h??h)));
+  const m=s.mask?new Uint8Array(Buffer.from(String(s.mask||''),'base64')):null;
+  const mw=s.w??w;
+  if(m&&m.length<(s.w??w)*(s.h??h))return;
+  const hue=(s.hue||0),sat=(s.sat===undefined?100:s.sat)/100,val=(s.val===undefined?100:s.val)/100;
+  const con=s.con||0,k=(259*(con+255))/(255*(259-con));
+  for(let y=Y0;y<Y1;y++)for(let x=X0;x<X1;x++){
+    if(m&&!m[(y-Y0)*mw+(x-X0)])continue;
+    const i=(y*w+x)*4;
+    if(px[i+3]===0)continue;
+    let r=px[i]/255,g=px[i+1]/255,b=px[i+2]/255;
+    if(hue||sat!==1||val!==1){
+      const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;
+      let H=0;
+      if(d){
+        if(mx===r)H=((g-b)/d+(g<b?6:0));
+        else if(mx===g)H=(b-r)/d+2;
+        else H=(r-g)/d+4;
+        H*=60;
+      }
+      let S=mx?d/mx:0,V=mx;
+      H=(H+hue)%360; if(H<0)H+=360;
+      S=Math.max(0,Math.min(1,S*sat));
+      V=Math.max(0,Math.min(1,V*val));
+      const c2=V*S,xx=c2*(1-Math.abs((H/60)%2-1)),m2=V-c2;
+      const t=Math.floor(H/60)%6;
+      const rgb=[[c2,xx,0],[xx,c2,0],[0,c2,xx],[0,xx,c2],[xx,0,c2],[c2,0,xx]][t];
+      r=rgb[0]+m2;g=rgb[1]+m2;b=rgb[2]+m2;
+    }
+    let R=r*255,G=g*255,B=b*255;
+    if(con){R=(R-128)*k+128;G=(G-128)*k+128;B=(B-128)*k+128}
+    px[i]=Math.max(0,Math.min(255,Math.round(R)));
+    px[i+1]=Math.max(0,Math.min(255,Math.round(G)));
+    px[i+2]=Math.max(0,Math.min(255,Math.round(B)));
+  }
+}
+
 export function applyEdits(px, w, h, edits) {
   const circle = (st, fn) => {
     const rr = st.r * st.r;
@@ -125,11 +178,77 @@ export function applyEdits(px, w, h, edits) {
       const x0 = Math.max(0, Math.floor(st.x)), y0 = Math.max(0, Math.floor(st.y));
       const x1 = Math.min(w, Math.ceil(st.x + st.w)), y1 = Math.min(h, Math.ceil(st.y + st.h));
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) px[(y * w + x) * 4 + 3] = 0;
+    } else if (st.t === 'adj') {
+      // 색 손보기 — 편집기와 «글자 그대로 같은» 함수를 쓴다.
+      adjPixels(px, w, h, st);
+    } else if (st.t === 'stamps') {
+      // 고른 조각을 «붓» 으로 — 알갱이 꾸러미 하나를 여러 자리에 툭툭 찍는다.
+      const buf = new Uint8Array(Buffer.from(String(st.data || ''), 'base64'));
+      const sw = Math.max(1, st.sw | 0), sh = Math.max(1, st.sh | 0);
+      if (buf.length < sw * sh * 4) continue;
+      for (const at of (st.at || [])) {
+        const dx = Math.round(at[0]), dy = Math.round(at[1]);
+        for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+          const b = (y * sw + x) * 4; if (buf[b + 3] === 0) continue;
+          const gx = dx + x, gy = dy + y;
+          if (gx < 0 || gy < 0 || gx >= w || gy >= h) continue;
+          const a = (gy * w + gx) * 4;
+          px[a] = buf[b]; px[a + 1] = buf[b + 1]; px[a + 2] = buf[b + 2]; px[a + 3] = buf[b + 3];
+        }
+      }
+    } else if (st.t === 'sh') {
+      // 명암 — 그 낱장이 쓰던 색들(ramp) 사이를 한 눈금씩 오간다. 색 수가 안 늘어난다.
+      // steps 는 점마다 몇 눈금 옮길지, dir 은 +1 밝게 / -1 어둡게. 편집기와 같은 셈이다.
+      const sm = new Uint8Array(Buffer.from(String(st.steps || ''), 'base64'));
+      const ramp = st.ramp || [];
+      if (!ramp.length || sm.length < st.w * st.h) continue;
+      const dir = st.dir < 0 ? -1 : 1;
+      for (let y = 0; y < st.h; y++) for (let x = 0; x < st.w; x++) {
+        const n = sm[y * st.w + x]; if (!n) continue;
+        const gx = st.x + x, gy = st.y + y;
+        if (gx < 0 || gy < 0 || gx >= w || gy >= h) continue;
+        const i = (gy * w + gx) * 4; if (px[i + 3] === 0) continue;
+        let best = 0, bd = 1e9;
+        for (let k = 0; k < ramp.length; k++) {
+          const a = px[i] - ramp[k][0], b = px[i + 1] - ramp[k][1], g = px[i + 2] - ramp[k][2];
+          const dd = a * a + b * b + g * g; if (dd < bd) { bd = dd; best = k; }
+        }
+        const j = Math.max(0, Math.min(ramp.length - 1, best + dir * n));
+        px[i] = ramp[j][0]; px[i + 1] = ramp[j][1]; px[i + 2] = ramp[j][2];
+      }
+    } else if (st.t === 'pm') {
+      // 표대로 칠하기 — 직선·네모·타원이 전부 이 하나로 구워진다.
+      // mask 는 한 점에 한 자(1이면 칠함)를 base64 로 적은 것. w×h 만큼 담긴다.
+      const m = new Uint8Array(Buffer.from(String(st.mask || ''), 'base64'));
+      if (m.length < st.w * st.h) continue;
+      const [cr, cg, cb] = st.color || [255, 255, 255];
+      for (let y = 0; y < st.h; y++) for (let x = 0; x < st.w; x++) {
+        if (!m[y * st.w + x]) continue;
+        const gx = st.x + x, gy = st.y + y;
+        if (gx < 0 || gy < 0 || gx >= w || gy >= h) continue;
+        const i = (gy * w + gx) * 4;
+        px[i] = cr; px[i + 1] = cg; px[i + 2] = cb; px[i + 3] = 255;
+      }
+    } else if (st.t === 'em') {
+      // 표대로 비우기 — 올가미·마술봉으로 고른 «네모 아닌» 자리를 지운다.
+      // mask 는 한 점에 한 자(1이면 지움)를 base64 로 적은 것. w×h 만큼 담긴다.
+      const m = new Uint8Array(Buffer.from(String(st.mask || ''), 'base64'));
+      if (m.length < st.w * st.h) continue;
+      for (let y = 0; y < st.h; y++) for (let x = 0; x < st.w; x++) {
+        if (!m[y * st.w + x]) continue;
+        const gx = st.x + x, gy = st.y + y;
+        if (gx < 0 || gy < 0 || gx >= w || gy >= h) continue;
+        px[(gy * w + gx) * 4 + 3] = 0;
+      }
     } else if (st.t === 'c') {
       circle(st, i => { px[i + 3] = 0; });
     } else if (st.t === 'p') {
       const [r, g, b] = st.color || [255, 255, 255];
-      circle(st, i => { px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255; });
+      // 무늬(dith)가 켜져 있으면 «한 점 걸러» 만 칠한다 — 편집기와 같은 셈이다.
+      circle(st, i => {
+        if (st.dith) { const q = i / 4; if (((q % w) + ((q / w) | 0)) % 2 !== 0) return; }
+        px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255;
+      });
     } else if (st.t === 'swap') {
       const [fr, fg, fb] = st.from, [tr, tg, tb] = st.to;
       const tol = (st.tol ?? 20) ** 2 * 3;
@@ -159,37 +278,48 @@ export function applyEdits(px, w, h, edits) {
       while (stack.length) {
         const p = stack.pop(), i = p * 4;
         if (!near(i)) continue;
-        px[i] = tr; px[i + 1] = tg; px[i + 2] = tb; px[i + 3] = 255;
+        // 무늬(dith)면 «한 점 걸러» 만 칠한다 — 번지는 범위는 그대로다(편집기와 같은 셈).
+        if (!st.dith || ((p % w) + ((p / w) | 0)) % 2 === 0) { px[i] = tr; px[i + 1] = tg; px[i + 2] = tb; px[i + 3] = 255; }
         const x = p % w, y = (p / w) | 0;
         if (x > 0 && !seen[p - 1]) { seen[p - 1] = 1; stack.push(p - 1); }
         if (x < w - 1 && !seen[p + 1]) { seen[p + 1] = 1; stack.push(p + 1); }
         if (y > 0 && !seen[p - w]) { seen[p - w] = 1; stack.push(p - w); }
         if (y < h - 1 && !seen[p + w]) { seen[p + w] = 1; stack.push(p + w); }
       }
-    } else if (st.t === 'blit') {
+    } else if (st.t === 'blit' || st.t === 'stamp') {
       // 고른 사각형을 떠서 돌리고·크기를 바꿔 다른 자리에 놓는다.
       //   sx,sy,sw,sh  떠 올 자리        dx,dy,dw,dh  놓을 자리(크기까지)
       //   rot 0/90/180/270 (시계 방향)   fx,fy 좌우·위아래 뒤집기   cut 1이면 떠 온 자리는 비운다
       // 픽셀아트라 «가장 가까운 점» 으로만 늘린다(부드럽게 섞으면 도트가 뭉갠다).
       // 투명한 점은 안 그린다 — 붙인 조각이 바탕을 지우면 안 되기 때문이다.
-      const sx = Math.round(st.sx), sy = Math.round(st.sy);
+      //
+      // stamp 는 «다른 낱장에서 온 조각» 이다. 이 낱장엔 원본이 없으니 알갱이(data)를
+      // 지고 다닌다 — 점 하나에 RGBA 넉 자를 통째로 base64 로 적은 것, sw×sh 크기.
+      // 편집기(fx-studio)와 여기가 **같은 셈** 이어야 화면과 gif 가 안 갈린다.
+      const sx = Math.round(st.sx || 0), sy = Math.round(st.sy || 0);
       const sw = Math.max(1, Math.round(st.sw)), sh = Math.max(1, Math.round(st.sh));
       const dw = Math.max(1, Math.round(st.dw ?? sw)), dh = Math.max(1, Math.round(st.dh ?? sh));
       const dx = Math.round(st.dx), dy = Math.round(st.dy);
       const rot = ((Math.round((st.rot || 0) / 90) * 90) % 360 + 360) % 360;
 
-      const cut = new Uint8Array(sw * sh * 4);
-      for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
-        const gx = sx + x, gy = sy + y;
-        if (gx < 0 || gy < 0 || gx >= w || gy >= h) continue;
-        const a = (gy * w + gx) * 4, b = (y * sw + x) * 4;
-        cut[b] = px[a]; cut[b + 1] = px[a + 1]; cut[b + 2] = px[a + 2]; cut[b + 3] = px[a + 3];
-      }
-      if (st.cut) {
+      let cut;
+      if (st.t === 'stamp') {
+        cut = new Uint8Array(Buffer.from(String(st.data || ''), 'base64'));
+        if (cut.length < sw * sh * 4) continue;   // 담긴 알갱이가 모자라면 손대지 않는다
+      } else {
+        cut = new Uint8Array(sw * sh * 4);
         for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
           const gx = sx + x, gy = sy + y;
           if (gx < 0 || gy < 0 || gx >= w || gy >= h) continue;
-          px[(gy * w + gx) * 4 + 3] = 0;
+          const a = (gy * w + gx) * 4, b = (y * sw + x) * 4;
+          cut[b] = px[a]; cut[b + 1] = px[a + 1]; cut[b + 2] = px[a + 2]; cut[b + 3] = px[a + 3];
+        }
+        if (st.cut) {
+          for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+            const gx = sx + x, gy = sy + y;
+            if (gx < 0 || gy < 0 || gx >= w || gy >= h) continue;
+            px[(gy * w + gx) * 4 + 3] = 0;
+          }
         }
       }
       const rw = (rot === 90 || rot === 270) ? sh : sw;

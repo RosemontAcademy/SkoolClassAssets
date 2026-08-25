@@ -711,20 +711,34 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .ed.full .cw{flex:1;max-height:calc(100vh - 150px)}
   .ed.full .tools{max-height:calc(100vh - 150px);overflow-y:auto}
   .cwrap{position:relative;width:max-content;height:max-content}
+  /* 캔버스에서 끌 때 옆 글자가 딸려 잡히면 Ctrl+C 가 «글자 복사» 로 새 버린다 — 아예 막는다 */
+  .ed,#cv{user-select:none;-webkit-user-select:none}
   #cv{image-rendering:pixelated;cursor:crosshair;touch-action:none;border-radius:4px;display:block}
   /* 앞 장은 파랗게 물들여 보여준다 — 안 그러면 "왜 겹쳐 보이지" 가 된다 */
-  #onion{position:absolute;left:0;top:0;pointer-events:none;image-rendering:pixelated;
-    opacity:.32;border-radius:4px;filter:grayscale(1) sepia(1) hue-rotate(175deg) saturate(4)}
+  /* 앞 장은 파랗게, 뒷 장은 붉게 — 물들이는 일은 이제 그리는 쪽이 한다(CSS 로는 한 색뿐) */
+  #onion{position:absolute;left:0;top:0;pointer-events:none;image-rendering:pixelated;border-radius:4px}
   .onionmark{position:absolute;right:12px;top:12px;font-size:10px;font-weight:800;color:#7aa7ff;
     background:rgba(0,0,0,.55);border-radius:5px;padding:1px 6px;pointer-events:none}
   #grid{position:absolute;left:0;top:0;pointer-events:none;border-radius:4px}
+  #selov{position:absolute;left:0;top:0;pointer-events:none;z-index:6}
   /* 그을 자리에 뜨는 붓 크기 윤곽. 검은 그림 위에서도 보이게 두 겹으로 두른다. */
   .brushcur{position:absolute;transform:translate(-50%,-50%);border:1px solid #fff;
     box-shadow:0 0 0 1px rgba(0,0,0,.7);border-radius:50%;pointer-events:none;display:none;z-index:5}
+  /* 고른 곳의 모서리 손잡이. 눌리는 판정은 캔버스가 직접 하므로 여기선 안 받는다. */
+  .selbox .h{position:absolute;width:9px;height:9px;margin:-5px 0 0 -5px;background:#fff;
+    border:1px solid #111;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.45)}
+  /* 아직 안 내려놓은 조각은 노란 테로 «떠 있음» 을 알린다 */
+  .selbox.flt .h{background:#ffd34d}
+  .fltmark{position:absolute;left:12px;top:12px;font-size:10px;font-weight:800;color:#3a2c00;
+    background:#ffd34d;border-radius:5px;padding:2px 7px;pointer-events:none;z-index:7}
   /* 창 모드로 돌아가도 도구가 그림 아래로 접히지 않게. 그림 칸이 자기 안에서 스크롤한다. */
   .ed:not(.full) .edmain{flex-wrap:nowrap}
   .ed:not(.full) .cw{flex:1;min-width:0;max-height:70vh}
-  .tools{display:flex;flex-direction:column;gap:8px;min-width:210px;flex:0 0 auto}
+  /* 도구 칸이 «글 길이만큼» 넓어지면 그림 칸이 그만큼 줄어 배율이 뚝 떨어진다
+     (실측: 안내문을 늘렸더니 6배가 2배로). 폭을 못 박고 글을 접는다. */
+  .tools{display:flex;flex-direction:column;gap:8px;min-width:210px;max-width:280px;flex:0 0 auto}
+  .tools .cap{white-space:normal;word-break:keep-all;line-height:1.5}
+  .tools button{white-space:nowrap}
   .tgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
   .tgrid button{padding:7px 4px;font-size:12px}
   .pal{display:flex;flex-wrap:wrap;gap:4px;max-width:230px}
@@ -1097,6 +1111,8 @@ function applySnap(js){
   // 편집기를 열어 둔 채로 되돌렸으면, 그때 긋고 있던 붓질까지 그대로 되살린다.
   // mountedKey 를 맞춰 둬야 화면이 붙으면서 저장본으로 덮어쓰지 않는다.
   strokes=(o.strokes||[]).slice();
+  flt=null;fltBase=null;             // 되돌리면 떠 있던 조각은 없던 것이 된다
+  adj=null;
   mountedKey=openEd?openEd.key:null;
   rebuildEdited(()=>render());
 }
@@ -1514,25 +1530,42 @@ addEventListener('keydown',e=>{
   const k=e.key.toLowerCase();
   // 어디에 있든 같은 역사를 되돌린다. 편집기 안이라고 다른 되돌리기가 도는 게
   // 캔바를 쓰다 온 손에는 «안 돌아간다» 로 느껴진다.
+  // 떠 있는 조각이 있으면 Ctrl+Z 는 «그 붙이기부터» 물린다 (아세프라이트와 같다)
+  if(k==='z'&&!e.shiftKey&&flt){ e.preventDefault(); cancelFloat(); toast('물렸습니다'); return; }
   if(k==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); }
   if(k==='y'){ e.preventDefault(); redo(); }
+  if(k==='a'&&openEd&&base){                    // 전체 선택
+    e.preventDefault(); dropFloat();
+    sel={x:0,y:0,w:base.w,h:base.h};setTool('sel');drawSel();updateSelLab();return;
+  }
+  if(k==='d'&&openEd&&sel){ e.preventDefault(); dropFloat(); sel=null;drawSel();updateSelLab(); return; }
+  if(k==='x'&&openEd&&sel){                     // 오려내기 — 그림째 담고 그 자리를 비운다
+    e.preventDefault();
+    if(flt){ // 떠 있는 걸 오리면 조각만 담고 없앤다(뜬 자리는 이미 비어 있다)
+      if(copySel()){const f=flt.from,copy=flt.copy;flt=null;fltBase=null;
+        if(!copy)pushStrokes([eraseStroke(f)]);
+        sel=null;redraw();drawSel();updateSelLab();toast('오려 냈습니다 — Ctrl+V 로 붙입니다')}
+      return;
+    }
+    if(copySel()){ push();pushStrokes([eraseSel()]);
+      redraw();drawSel();updateSelLab();toast('오려 냈습니다 — Ctrl+V 로 붙입니다') }
+    return;
+  }
   if(k==='c'){
     // 글자를 고르고 있으면 그건 진짜 복사다 — 뺏지 않는다.
     if(String(getSelection()||'').length) return;
-    if(openEd&&sel){ e.preventDefault(); selClip=Object.assign({},sel); toast('고른 곳을 복사했습니다 — Ctrl+V 로 붙입니다'); return; }
+    if(openEd&&sel){ e.preventDefault();
+      toast(copySel()?'고른 곳을 그림째 복사했습니다 — 다른 낱장에도 Ctrl+V 로 붙습니다'
+                     :'고른 곳이 비어 있습니다','err'); return; }
     if(selSlot!==null&&seq[selSlot]){ e.preventDefault();
       clip=copySlot(seq[selSlot]); clip._edits=slotEdits(seq[selSlot]).map(x=>JSON.parse(JSON.stringify(x)));
       toast('칸을 복사했습니다 — Ctrl+V 로 붙입니다'); }
     else if(openEd){ e.preventDefault(); clip={src:openEd.src,i:openEd.i,over:[]}; toast('이 낱장을 복사했습니다 — Ctrl+V 로 붙입니다'); }
     return;
   }
-  if(k==='v'&&openEd&&selClip){
-    e.preventDefault();push();
-    const off=Math.max(2,Math.round(Math.min(selClip.w,selClip.h)*0.15));
-    strokes.push({t:'blit',sx:selClip.x,sy:selClip.y,sw:selClip.w,sh:selClip.h,
-      dx:selClip.x+off,dy:selClip.y+off,dw:selClip.w,dh:selClip.h,rot:0,fx:0,fy:0,cut:0});
-    sel={x:selClip.x+off,y:selClip.y+off,w:selClip.w,h:selClip.h};
-    redraw();drawSel();updateSelLab();toast('붙였습니다 — 끌어서 자리를 잡으세요');
+  if(k==='v'&&openEd&&clipPx){
+    e.preventDefault();
+    if(pasteFloat())toast('붙였습니다 — 끌어서 자리를 잡고 Enter 로 내려놓습니다');
     return;
   }
   if(k==='v'){
@@ -1554,12 +1587,26 @@ addEventListener('keydown',e=>{
 });
 
 // 도구 단축키 — Aseprite 와 같은 글쇠다. 손이 이미 그리로 간다.
-const TOOLKEY={b:'pencil',e:'eraser',i:'picker',g:'bucket',v:'move',n:'swap'};
+const TOOLKEY={b:'pencil',e:'eraser',i:'picker',g:'bucket',v:'move',n:'swap',
+  m:'sel',q:'lasso',w:'wand',l:'line',u:'rect',o:'oval',d:'shade',t:'brush'};
 const typingNow=e=>/^(INPUT|TEXTAREA)$/.test((e.target||{}).tagName||'');
 addEventListener('keydown',e=>{
   if(!openEd||e.ctrlKey||e.metaKey||e.altKey||typingNow(e))return;
   if(e.code==='Space'){ e.preventDefault();
-    if(!spaceDown){spaceDown=true;const c=document.getElementById('cv');if(c)c.style.cursor='grab'} return; }
+    if(!spaceDown){spaceDown=true;applyCursor()} return; }
+  // 떠 있는 조각을 내려놓고·물리는 글쇠. 아세프라이트와 같다.
+  if(e.key==='Enter'){ if(flt){e.preventDefault();dropFloat();sel=null;drawSel();updateSelLab();toast('내려놓았습니다')} return }
+  if(e.key==='Escape'){ e.preventDefault();
+    if(!cancelFloat()&&sel){sel=null;drawSel();updateSelLab()} return }
+  // 화살표로 한 점씩 민다(Shift 면 여덟 점). 고른 곳이 있으면 «들어 올려서» 민다.
+  if(isSelTool()&&sel&&e.key.indexOf('Arrow')===0){
+    e.preventDefault();
+    const n=e.shiftKey?8:1;
+    const dx=(e.key==='ArrowRight'?n:0)-(e.key==='ArrowLeft'?n:0);
+    const dy=(e.key==='ArrowDown'?n:0)-(e.key==='ArrowUp'?n:0);
+    fltEdit(f=>fltSet({x:f.x+dx,y:f.y+dy}));
+    return;
+  }
   const k=e.key.toLowerCase();
   if(TOOLKEY[k]){e.preventDefault();setTool(TOOLKEY[k]);return}
   if(k==='['){e.preventDefault();setBrush(brush-1)}
@@ -1567,7 +1614,7 @@ addEventListener('keydown',e=>{
 });
 addEventListener('keyup',e=>{
   if(e.code!=='Space')return;
-  spaceDown=false;const c=document.getElementById('cv');if(c&&c.style.cursor!=='grabbing')c.style.cursor='crosshair';
+  spaceDown=false;const c=document.getElementById('cv');if(c&&c.style.cursor!=='grabbing')applyCursor();
 });
 
 // ── 큰 편집기 ────────────────────────────────────────────────────────────
@@ -1575,33 +1622,736 @@ addEventListener('keyup',e=>{
 // 그림 칸과 도구 칸이 한 줄에 안 들어가면 도구가 그림 «아래» 로 접혀서, 8배만 넘겨도
 // 도구가 화면 밖(실측 y=1648, 창 높이 905)으로 사라졌다. 「창으로」 는 남겨 둔다.
 let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[],edZoom=0,edFull=true,mountedKey=null,spaceDown=false;
-// 「선택」 으로 고른 사각형(그림 좌표). 고른 게 없으면 null.
+
+// ── 도구마다 다른 손 모양 ────────────────────────────────────────────────
+// 도구는 글쇠로도 바뀌니(b·e·i·g·v) 지금 무엇을 들었는지 단추 색만으로는 놓치기 쉽다.
+// 아세프라이트처럼 «그림 위에서» 손 모양이 바뀌게 둔다. 도구 칸·단추 위는 그대로
+// 화살표라야 누르는 느낌이 산다 — 그래서 캔버스에만 씌운다.
+// 그림은 파일로 두지 않고 여기서 만든다(작업대는 파일 하나로 띄우는 것이 규칙이다).
+// 흰 칸·검은 칸 어디서든 보이도록 흰 몸에 검은 테를 두른다.
+// 뒤에 crosshair 를 붙여 둔다 — 그림 못 읽는 데서는 예전 십자가 그대로다.
+const svgCur=(body,hx,hy)=>'url("data:image/svg+xml,'+encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
+  +'<g fill="#fff" stroke="#111" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round">'
+  +body+'</g></svg>')+'") '+hx+' '+hy+',crosshair';
+const TOOLCUR={
+  // 연필·스포이드는 «찍는 끝» 이 왼쪽 아래다. 실제로 찍히는 자리는 손잡이 점(hotspot)이라
+  // 그림이 조금 어긋나도 결과는 안 틀리지만, 끝을 맞춰 두면 눈이 편하다.
+  pencil: svgCur('<path d="M2.6 21.4l1.1-4L15.3 5.8l2.9 2.9L6.6 20.3z"/>'
+    +'<path d="M2.6 21.4l1.1-4 2.9 2.9z" fill="#111"/>'
+    +'<path d="M15.3 5.8l2.9 2.9 1.5-1.5a2.05 2.05 0 000-2.9 2.05 2.05 0 00-2.9 0z"/>',2,22),
+  eraser: svgCur('<path d="M3.4 20.3l-.8-.8a1.8 1.8 0 010-2.5L13.9 5.7a1.8 1.8 0 012.5 0l3.5 3.5a1.8 1.8 0 010 2.5l-8.4 8.6z"/>'
+    +'<path d="M8.6 11.1l6.3 6.3" fill="none"/>',3,21),
+  picker: svgCur('<path d="M2.7 21.3l.7-3.2 8.8-8.8 2.5 2.5-8.8 8.8z"/>'
+    +'<path d="M13.1 6.4l1.7-1.7a2.4 2.4 0 013.4 0l.6.6a2.4 2.4 0 010 3.4l-1.7 1.7z"/>',2,22),
+  bucket: svgCur('<path d="M13.4 2.6l-9.1 9.1a2.4 2.4 0 000 3.4l5.4 5.4a2.4 2.4 0 003.4 0l5.6-5.6a2.4 2.4 0 000-3.4z"/>'
+    +'<path d="M17.2 6.4a3.4 3.4 0 00-4.8 0" fill="none"/>'
+    +'<path d="M3.4 15.6c-1.1 1.7-1.7 2.8-1.7 3.5a1.7 1.7 0 103.4 0c0-.7-.6-1.8-1.7-3.5z"/>',3,19),
+  swap:   svgCur('<path d="M3 5.5h12V2.2L20.5 7 15 11.8V8.5H3z"/>'
+    +'<path d="M21 15.5H9v-3.3L3.5 17 9 21.8v-3.3h12z"/>',12,12),
+  move:   'move',
+  sel:    'crosshair',
+  lasso:  svgCur('<path d="M12 3.2c5 0 8.8 2.4 8.8 5.4S17 14 12 14 3.2 11.6 3.2 8.6 7 3.2 12 3.2z" fill="none"/>'
+    +'<path d="M8.4 13.1c-1.5 2.3-1.6 4.6-.2 5.7" fill="none"/>'
+    +'<circle cx="7.6" cy="20" r="2.1"/>',3,3),
+  ellipse:svgCur('<ellipse cx="12" cy="12" rx="9.2" ry="6.6" fill="none"/>'
+    +'<path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" fill="none"/>',12,12),
+  wand:   svgCur('<path d="M3.2 20.8l10.4-10.4 2.4 2.4L5.6 23.2z"/>'
+    +'<path d="M17.4 3.2l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9z"/>'
+    +'<path d="M9.4 2.6l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/>',2,22)
+};
+// 고르는 도구들 — 넷 다 «고른 곳» 을 만들고, 떠 있는 조각을 다룬다.
+const SELTOOLS=['sel','lasso','ellipse','wand'];
+const isSelTool=()=>SELTOOLS.indexOf(tool)>=0;
+// 도형 도구 — 끄는 동안 미리보기만 뜨고, 손을 떼야 구워진다.
+const SHAPETOOLS=['line','rect','oval'];
+const isShapeTool=()=>SHAPETOOLS.indexOf(tool)>=0;
+// 모서리 손잡이 여덟 개의 손 모양. 잡으면 어느 쪽으로 늘어나는지가 손에 보인다.
+const HZCUR={nw:'nwse-resize',se:'nwse-resize',ne:'nesw-resize',sw:'nesw-resize',
+  n:'ns-resize',s:'ns-resize',e:'ew-resize',w:'ew-resize'};
+/** 지금 도구에 맞는 손 모양을 캔버스에 씌운다. 밀기(스페이스)가 도구보다 먼저다. */
+function applyCursor(){
+  const c=document.getElementById('cv'); if(!c)return;
+  c.style.cursor=spaceDown?'grab':(TOOLCUR[tool]||'crosshair');
+}
+// 「선택」 으로 고른 곳(그림 좌표). 고른 게 없으면 null.
+//   sel = {x,y,w,h, mask}   mask 는 그 네모 «안» 에서 실제로 고른 점만 1인 표.
+//   mask 가 null 이면 네모 통째로다 — 네모로 고르는 길은 예전과 똑같이 가볍게 돈다.
 let sel=null;
-// 복사해 둔 조각의 자리. 붙이면 그 자리에서 조금 옮겨 놓는다.
-let selClip=null;
+/** 고른 곳을 그림 크기의 표 하나로 편다. 더하기·빼기는 이 표 위에서 한다. */
+function fullMask(){
+  const m=new Uint8Array(base.w*base.h);
+  if(sel)for(let y=0;y<sel.h;y++)for(let x=0;x<sel.w;x++){
+    if(sel.mask&&!sel.mask[y*sel.w+x])continue;
+    const gx=sel.x+x,gy=sel.y+y;
+    if(gx>=0&&gy>=0&&gx<base.w&&gy<base.h)m[gy*base.w+gx]=1;
+  }
+  return m;
+}
+/** 그림 크기의 표를 «고른 곳» 으로 되돌린다. 테두리를 재고, 네모 통째면 mask 를 버린다. */
+function setSelFromMask(m){
+  let x0=base.w,y0=base.h,x1=-1,y1=-1;
+  for(let y=0;y<base.h;y++)for(let x=0;x<base.w;x++)if(m[y*base.w+x]){
+    if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+  }
+  if(x1<0){sel=null;return}
+  const w=x1-x0+1,h=y1-y0+1,mask=new Uint8Array(w*h);let all=true;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const v=m[(y+y0)*base.w+(x+x0)]?1:0;mask[y*w+x]=v;if(!v)all=false;
+  }
+  sel={x:x0,y:y0,w,h,mask:all?null:mask};
+}
+/** 그 점이 «고른 곳» 안인가. 네모만 보면 올가미로 고른 바깥까지 잡힌다. */
+function selHas(px,py){
+  if(!sel)return false;
+  const x=Math.floor(px)-sel.x,y=Math.floor(py)-sel.y;
+  if(x<0||y<0||x>=sel.w||y>=sel.h)return false;
+  return sel.mask?!!sel.mask[y*sel.w+x]:true;
+}
+/** 끌고 있는 모양(네모·타원·올가미)을 표로 그린다. */
+function shapeMask(dg,p){
+  const m=new Uint8Array(base.w*base.h);
+  const put=(x,y)=>{if(x>=0&&y>=0&&x<base.w&&y<base.h)m[y*base.w+x]=1};
+  const px=Math.floor(p.x),py=Math.floor(p.y);
+  if(tool==='lasso'){
+    // 이어 그은 선을 닫아서 그 «안» 을 채운다(홀짝 규칙 — 가로줄마다 몇 번 넘었는지 센다)
+    const pt=dg.pts;
+    if(pt.length<3){put(px,py);return m}
+    let y0=base.h,y1=0;
+    for(const q of pt){y0=Math.min(y0,Math.floor(q[1]));y1=Math.max(y1,Math.floor(q[1]))}
+    for(let y=Math.max(0,y0);y<=Math.min(base.h-1,y1);y++){
+      const cy=y+0.5,xs=[];
+      for(let i=0;i<pt.length;i++){
+        const a=pt[i],b=pt[(i+1)%pt.length];
+        if((a[1]>cy)===(b[1]>cy))continue;
+        xs.push(a[0]+(cy-a[1])/(b[1]-a[1])*(b[0]-a[0]));
+      }
+      xs.sort((u,v)=>u-v);
+      for(let i=0;i+1<xs.length;i+=2)
+        for(let x=Math.floor(xs[i]);x<=Math.floor(xs[i+1]);x++)put(x,y);
+    }
+    // 그은 선 자체도 고른 곳에 넣는다 — 가늘게 그으면 안이 비어 버린다
+    for(const q of pt)put(Math.floor(q[0]),Math.floor(q[1]));
+    return m;
+  }
+  const x0=Math.min(dg.ax,px),x1=Math.max(dg.ax,px);
+  const y0=Math.min(dg.ay,py),y1=Math.max(dg.ay,py);
+  if(tool==='ellipse'){
+    const cx=(x0+x1+1)/2,cy=(y0+y1+1)/2,rx=(x1-x0+1)/2,ry=(y1-y0+1)/2;
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+      const dx=(x+0.5-cx)/rx,dy=(y+0.5-cy)/ry;
+      if(dx*dx+dy*dy<=1)put(x,y);
+    }
+  }else{
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)put(x,y);
+  }
+  return m;
+}
+/** 더하기(Shift)·빼기(Alt)를 얹어 고른 곳을 갈아끼운다. */
+function combineSel(m,op,prev){
+  if(op==='add'&&prev)for(let i=0;i<m.length;i++)m[i]=(m[i]||prev[i])?1:0;
+  else if(op==='sub'&&prev)for(let i=0;i<m.length;i++)m[i]=(prev[i]&&!m[i])?1:0;
+  setSelFromMask(m);
+  drawSel();updateSelLab();
+}
+/** 마술봉 — 누른 점과 «비슷한 색» 으로 이어진 덩어리만 고른다.
+    허용 오차는 페인트통과 같은 손잡이(비슷한 색 허용)를 쓴다. */
+function wandSelect(p,op,prev){
+  const w=base.w,h=base.h;
+  const d=ctxOf().getImageData(0,0,w,h).data;
+  const sx=Math.floor(p.x),sy=Math.floor(p.y);
+  if(sx<0||sy<0||sx>=w||sy>=h)return;
+  const si=(sy*w+sx)*4,seed=[d[si],d[si+1],d[si+2],d[si+3]],t=(tol??20)**2*3;
+  const near=i=>{
+    if(seed[3]<40)return d[i+3]<40;
+    if(d[i+3]<40)return false;
+    const a=d[i]-seed[0],b=d[i+1]-seed[1],g=d[i+2]-seed[2];
+    return a*a+b*b+g*g<=t;
+  };
+  const m=new Uint8Array(w*h),seen=new Uint8Array(w*h),st=[sy*w+sx];seen[sy*w+sx]=1;
+  while(st.length){
+    const q=st.pop(); if(!near(q*4))continue;
+    m[q]=1;
+    const x=q%w,y=(q/w)|0;
+    if(x>0&&!seen[q-1]){seen[q-1]=1;st.push(q-1)}
+    if(x<w-1&&!seen[q+1]){seen[q+1]=1;st.push(q+1)}
+    if(y>0&&!seen[q-w]){seen[q-w]=1;st.push(q-w)}
+    if(y<h-1&&!seen[q+w]){seen[q+w]=1;st.push(q+w)}
+  }
+  combineSel(m,op,prev);
+}
+// 복사해 둔 «알갱이». 자리만 담으면 다른 낱장에 붙일 때 그 낱장 제 그림이 복제된다
+// (2026-08-25 원장님: "다른 프레임에 붙여넣었는데 본체랑 합쳐진다"). 그림째 담는다.
+// clipPx = {w,h,x,y,b64}   b64 = 점 하나에 RGBA 넉 자, 그걸 통째로 base64
+let clipPx=null;
+
+// ── 떠 있는 조각 ─────────────────────────────────────────────────────────
+// 아세프라이트와 같은 손이다. 고른 곳을 «끌거나» 붙이면 알갱이가 그림에서 들려
+// 여기 담긴다. 떠 있는 동안은 그림에 굽지 않는다 — 그래서
+//   · 본체가 안 따라오고(뜬 자리는 내려놓을 때 한 번만 비운다),
+//   · 열 번을 돌리고 키워도 언제나 «원본 알갱이» 에서 다시 뜨니 도트가 안 뭉갠다.
+// 내려놓는 때: Enter · 딴 도구 · 딴 낱장 · 저장 · 적용.  Esc 면 물린다.
+// 들어 올린 것부터 내려놓기까지가 되돌리기 «한 칸» 이다(아세프라이트도 그렇다).
+let flt=null;
+// flt = { w,h        들어 올린 원본 크기
+//         b64        다른 낱장에서 온 것이면 그 알갱이(같은 낱장에서 떴으면 없다)
+//         x,y,dw,dh  놓일 자리와 크기      rot,fx,fy  돌림·뒤집기
+//         from       {t:'here',x,y,w,h} | {t:'clip'}
+//         copy       1이면 뜬 자리를 안 비운다(Alt+끌기 = 복제)
+//         snapAt     들어 올릴 때의 되돌리기 깊이 — 물릴 때 그 칸도 같이 걷는다 }
+let fltBase=null;   // 조각 없는 그림. 끌 때마다 밑칠을 처음부터 다시 하지 않으려고 담아 둔다.
+
+// ── 도형 그리기와 좌우 대칭 ──────────────────────────────────────────────
+// 직선·네모·타원은 «표 하나로 칠하기»(pm) 한 손질로 구워진다. 도형마다 손질을 따로
+// 두면 두 런타임에 같은 셈을 네 벌씩 둬야 한다 — 어긋날 자리를 미리 없앤다.
+// 미리보기도 «구울 그 손질» 을 그대로 얹어 보여주므로 보이는 것과 구운 것이 안 갈린다.
+let shapePrev=null;   // 긋는 중인 도형 (아직 안 구운 손질 줄)
+let fillShape=false;  // 네모·타원을 속까지 채울지
+let symOn=false;      // 좌우 대칭 — 이펙트는 대칭이 많아 손이 반으로 준다
+/** 그림 크기의 표를 만든다. 붓 굵기만큼 두툼한 점을 찍는 붓과 함께. */
+function newMask(){return new Uint8Array(base.w*base.h)}
+const maskDot=(m,cx,cy,r)=>{
+  const rr=r*r;
+  const x0=Math.max(0,Math.floor(cx-r)),y0=Math.max(0,Math.floor(cy-r));
+  const x1=Math.min(base.w,Math.ceil(cx+r)),y1=Math.min(base.h,Math.ceil(cy+r));
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const dx=x+0.5-cx,dy=y+0.5-cy;
+    if(dx*dx+dy*dy<=rr)m[y*base.w+x]=1;
+  }
+};
+/** 두 점을 잇는 곧은 선. 붓 굵기를 따라 두툼해진다. */
+function maskLine(m,a,b,r){
+  const n=Math.max(1,Math.ceil(Math.max(Math.abs(b.x-a.x),Math.abs(b.y-a.y))*2));
+  for(let i=0;i<=n;i++)maskDot(m,a.x+(b.x-a.x)*i/n,a.y+(b.y-a.y)*i/n,r);
+}
+/** 끌고 있는 도형을 표로 그린다. */
+function shapeToMask(a,p,square){
+  const m=newMask(),r=brush/2;
+  if(tool==='line'){
+    let q=p;
+    if(square){                                  // Shift = 0·45·90도로 붙인다
+      const dx=p.x-a.x,dy=p.y-a.y,ax=Math.abs(dx),ay=Math.abs(dy);
+      if(ax>ay*2)q={x:p.x,y:a.y};
+      else if(ay>ax*2)q={x:a.x,y:p.y};
+      else{const d=(ax+ay)/2;q={x:a.x+Math.sign(dx)*d,y:a.y+Math.sign(dy)*d}}
+    }
+    maskLine(m,a,q,r);
+    return m;
+  }
+  let x0=Math.min(a.x,p.x),x1=Math.max(a.x,p.x);
+  let y0=Math.min(a.y,p.y),y1=Math.max(a.y,p.y);
+  if(square){                                    // Shift = 정사각형·정원
+    const d=Math.max(x1-x0,y1-y0);
+    if(p.x<a.x)x0=x1-d; else x1=x0+d;
+    if(p.y<a.y)y0=y1-d; else y1=y0+d;
+  }
+  if(tool==='rect'){
+    if(fillShape){
+      for(let y=Math.floor(y0);y<=Math.floor(y1);y++)for(let x=Math.floor(x0);x<=Math.floor(x1);x++)
+        if(x>=0&&y>=0&&x<base.w&&y<base.h)m[y*base.w+x]=1;
+    }else{
+      maskLine(m,{x:x0,y:y0},{x:x1,y:y0},r);maskLine(m,{x:x1,y:y0},{x:x1,y:y1},r);
+      maskLine(m,{x:x1,y:y1},{x:x0,y:y1},r);maskLine(m,{x:x0,y:y1},{x:x0,y:y0},r);
+    }
+    return m;
+  }
+  // 타원 — 속을 채우거나, 붓 굵기만큼의 테두리만
+  const cx=(x0+x1)/2,cy=(y0+y1)/2,rx=Math.max(0.5,(x1-x0)/2),ry=Math.max(0.5,(y1-y0)/2);
+  const inside=(x,y,sx,sy)=>{
+    const dx=(x+0.5-cx)/sx,dy=(y+0.5-cy)/sy;return dx*dx+dy*dy<=1;
+  };
+  const irx=Math.max(0,rx-brush),iry=Math.max(0,ry-brush);
+  for(let y=Math.max(0,Math.floor(cy-ry-1));y<=Math.min(base.h-1,Math.ceil(cy+ry+1));y++)
+    for(let x=Math.max(0,Math.floor(cx-rx-1));x<=Math.min(base.w-1,Math.ceil(cx+rx+1));x++){
+      if(!inside(x,y,rx,ry))continue;
+      if(!fillShape&&irx>0&&iry>0&&inside(x,y,irx,iry))continue;
+      m[y*base.w+x]=1;
+    }
+  return m;
+}
+/** 표를 «칠하기 손질» 하나로 여민다. 빈 가장자리는 잘라 낸다. */
+function maskStroke(m,rgb){
+  // 무늬가 켜져 있으면 표에서 «한 점 걸러» 만 남긴다. 표는 이미 점 단위라 여기서 거르면 된다.
+  if(dithOn){for(let y=0;y<base.h;y++)for(let x=0;x<base.w;x++)if((x+y)%2)m[y*base.w+x]=0}
+  let x0=base.w,y0=base.h,x1=-1,y1=-1;
+  for(let y=0;y<base.h;y++)for(let x=0;x<base.w;x++)if(m[y*base.w+x]){
+    if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+  }
+  if(x1<0)return null;
+  const w=x1-x0+1,h=y1-y0+1,out=new Uint8Array(w*h);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)out[y*w+x]=m[(y+y0)*base.w+(x+x0)];
+  return {t:'pm',x:x0,y:y0,w,h,mask:toB64(out),color:rgb};
+}
+/** 좌우로 뒤집은 표. 대칭이 켜져 있으면 그은 것과 «짝» 을 같이 남긴다. */
+function mirrorMask(m){
+  const o=newMask();
+  for(let y=0;y<base.h;y++)for(let x=0;x<base.w;x++)
+    if(m[y*base.w+x])o[y*base.w+(base.w-1-x)]=1;
+  return o;
+}
+/** 도형 하나가 남길 손질 줄. 대칭이면 두 줄이 된다. */
+function shapeStrokes(m){
+  const rgb=hex2rgb(color),out=[];
+  const a=maskStroke(m,rgb); if(a)out.push(a);
+  if(symOn){const b=maskStroke(mirrorMask(m),rgb); if(b)out.push(b)}
+  return out;
+}
+
+// ── 명암 붓 ──────────────────────────────────────────────────────────────
+// 밝게/어둡게를 «색을 새로 만들어» 칠하면 도트 그림의 색 수가 금세 불어난다. 아세프라이트는
+// 그 낱장이 쓰던 색을 줄 세워 두고 그 사이를 한 눈금씩 오간다. 여기도 같은 손이다.
+// 한 번 끄는 동안 지나간 자리를 «몇 번 지났는지» 로 모아 두었다가, 손 뗄 때 손질 하나로 굽는다.
+let shade=null;       // {x,y,w,h,steps:Uint8Array} 끄는 중인 명암
+let shadeDir=-1;      // -1 어둡게 · +1 밝게
+let onionN=1;         // 앞뒤로 몇 장까지 비출지
+let dithOn=false;     // 무늬 — 한 점 걸러 한 점만 칠하기
+let brushDrag=null;   // 도장붓으로 찍은 자리들
+
+// ── 도장붓 ───────────────────────────────────────────────────────────────
+// 「고른 곳」 을 Ctrl+C 로 복사해 두면 그걸 붓처럼 툭툭 찍는다. 불티·별·연기처럼
+// 같은 알갱이를 여럿 흩뿌리는 이펙트에 손이 제일 많이 가는 자리다.
+// 찍은 자리가 스물이어도 알갱이 꾸러미는 «하나» 다 — 저장 파일이 그만큼 안 부푼다.
+function brushStroke(){
+  if(!brushDrag||!brushDrag.at.length||!clipPx)return null;
+  return {t:'stamps',sw:clipPx.w,sh:clipPx.h,data:clipPx.b64,at:brushDrag.at.slice()};
+}
+/** 붓이 지나간 자리에 조각 하나를 얹는다. 너무 촘촘히 겹치지 않게 띄엄띄엄 찍는다. */
+function brushDab(p){
+  if(!clipPx)return;
+  const gap=Math.max(2,Math.round(Math.max(clipPx.w,clipPx.h)*0.6));
+  const x=Math.round(p.x-clipPx.w/2),y=Math.round(p.y-clipPx.h/2);
+  if(!brushDrag)brushDrag={at:[]};
+  const last=brushDrag.at[brushDrag.at.length-1];
+  if(last&&Math.abs(last[0]-x)<gap&&Math.abs(last[1]-y)<gap)return;
+  brushDrag.at.push([x,y]);
+  if(symOn)brushDrag.at.push([base.w-clipPx.w-x,y]);
+}
+/**
+ * 색 줄 — 어두운 것부터 밝은 것까지.
+ *
+ * 옆 칸의 «색 목록» 을 쓰면 안 된다. 그건 손대기 «전» 원본의 색이라, 색을 손본 뒤에
+ * 명암을 칠하면 화면에 없던 옛 색이 되살아난다(실측: 색 87개짜리 그림에 새 색 6개가 생겼다).
+ * 지금 화면에 실제로 깔린 색만 센다 — 그래야 도트 색 수가 안 늘어난다.
+ */
+function shadeRamp(){
+  const d=ctxOf().getImageData(0,0,base.w,base.h).data,n=new Map();
+  for(let i=0;i<d.length;i+=4){
+    if(d[i+3]===0)continue;
+    const k=(d[i]<<16)|(d[i+1]<<8)|d[i+2];
+    n.set(k,(n.get(k)||0)+1);
+  }
+  return [...n.entries()].sort((a,b)=>b[1]-a[1]).slice(0,64)
+    .map(([k])=>[(k>>16)&255,(k>>8)&255,k&255])
+    .sort((a,b)=>(a[0]*.299+a[1]*.587+a[2]*.114)-(b[0]*.299+b[1]*.587+b[2]*.114));
+}
+/** 끄는 중인 명암을 «구울 그 손질» 로 여민다. 미리보기도 이걸 쓴다. */
+function shadeStroke(){
+  if(!shade)return null;
+  return {t:'sh',x:shade.x,y:shade.y,w:shade.w,h:shade.h,
+    steps:toB64(shade.steps),dir:shadeDir,ramp:shade.ramp};
+}
+/** 붓이 지나간 자리를 한 눈금씩 더한다. */
+function shadeDab(p){
+  if(!shade)shade={x:0,y:0,w:base.w,h:base.h,steps:new Uint8Array(base.w*base.h),ramp:shadeRamp()};
+  const r=brush/2,rr=r*r;
+  const xs=symOn?[p.x,base.w-p.x]:[p.x];
+  for(const cx of xs){
+    const x0=Math.max(0,Math.floor(cx-r)),y0=Math.max(0,Math.floor(p.y-r));
+    const x1=Math.min(base.w,Math.ceil(cx+r)),y1=Math.min(base.h,Math.ceil(p.y+r));
+    for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+      const dx=x+0.5-cx,dy=y+0.5-p.y;
+      if(dx*dx+dy*dy>rr)continue;
+      const i=y*base.w+x;
+      if(shade.steps[i]<8)shade.steps[i]++;   // 한자리를 오래 문질러도 8눈금까지만
+    }
+  }
+}
+
+// ── 색 손보기 ────────────────────────────────────────────────────────────
+// 손잡이를 미는 동안은 «아직 안 구운» 채로 화면에만 얹는다. 「적용」을 눌러야 손질로
+// 남는다 — 밀다 만 것이 조용히 구워지면 되돌리기 역사가 손잡이질마다 쌓여 지저분해진다.
+// 다만 딴 낱장·저장으로 넘어갈 땐 얹혀 있던 것을 그 자리에서 굽는다(잃지 않게).
+let adj=null;       // {x,y,w,h,mask, hue,sat,val,con}
+const ADJ0={hue:0,sat:100,val:100,con:0};
+const adjIdle=a=>!a||(!a.hue&&a.sat===100&&a.val===100&&!a.con);
+/** 색 손보기를 손질로 남긴다. 아무것도 안 민 상태면 그냥 버린다. */
+function dropAdj(){
+  if(!adj)return false;
+  const a=adj;adj=null;
+  if(adjIdle(a)){redraw();return false}
+  pushStrokes([a]);redraw();return true;
+}
+
+// ── 모든 장에 한 번에 ────────────────────────────────────────────────────
+// 이펙트는 12장이 한 몸이다. 색을 손보거나 조각을 얹는 일은 «한 장만» 하는 게 오히려
+// 드물다. 그런데 지금까지는 12번 똑같은 손질을 반복해야 했다.
+// 켜 두면 손질 하나가 이어 붙인 줄의 «모든 칸» 에 그대로 얹힌다.
+let allFrames=false;
+const cloneStroke=s=>JSON.parse(JSON.stringify(s));
+/**
+ * 손질을 얹는다. 「모든 장에」가 꺼져 있으면 지금 낱장에만.
+ *
+ * 켜져 있으면 칸마다 «제 손질 줄» 을 먼저 만들고(없으면 지금 것을 베껴서) 거기에 얹는다.
+ * 재료 낱장의 손질 줄에 바로 얹으면 그 낱장을 같이 쓰는 «다른 칸까지» 딸려 바뀐다 —
+ * 공유하는 줄은 건드리기 전에 갈아끼워야 한다.
+ */
+function pushStrokes(ss){
+  strokes.push(...ss.map(cloneStroke));
+  if(!allFrames)return;
+  const meKey=openEd?openEd.key:null;
+  seq.forEach(s=>{
+    const own=slotOwn(s);
+    if(own===meKey)return;                       // 지금 열어 둔 칸은 위에서 이미 얹었다
+    if(!edits[own])edits[own]=slotEdits(s).map(cloneStroke);
+    edits[own].push(...ss.map(cloneStroke));
+    delete editedCache[own];
+  });
+  Object.keys(compCache).forEach(k=>delete compCache[k]);
+}
+
+/** 지금 떠 있는 조각을 «내려놓으면 남을» 손질 그대로 돌려준다.
+    미리보기도 이걸로 그린다 — 보이는 것과 구워지는 것이 어긋날 자리를 아예 없앤다. */
+function fltStrokes(){
+  if(!flt)return [];
+  const at={dx:Math.round(flt.x),dy:Math.round(flt.y),
+    dw:Math.max(1,Math.round(flt.dw)),dh:Math.max(1,Math.round(flt.dh)),
+    rot:flt.rot|0,fx:flt.fx?1:0,fy:flt.fy?1:0};
+  if(!flt.b64&&flt.from.t==='here')
+    // 같은 낱장에서 «네모로» 뜬 것은 알갱이를 안 담는다 — 뜬 자리를 그대로 가리키면 된다.
+    // cut:1 이 «먼저 읽고 그 다음 비우기» 라 한 손질로 옮기기가 된다.
+    return [Object.assign({t:'blit',sx:flt.from.x,sy:flt.from.y,sw:flt.w,sh:flt.h,
+      cut:flt.copy?0:1},at)];
+  // 알갱이를 지고 다니는 조각(다른 낱장에서 온 것 · 올가미로 뜬 것 · 비스듬히 돌린 것).
+  // 뜬 자리는 따로 비우고(복제거나 남의 낱장에서 온 것이면 안 비운다), 조각은 알갱이째 찍는다.
+  const stamp=Object.assign({t:'stamp',sw:flt.w,sh:flt.h,data:flt.b64},at);
+  const er=(flt.copy||flt.from.t==='clip')?null:eraseStroke(flt.from);
+  return er?[er,stamp]:[stamp];
+}
+const fltRect=()=>({x:Math.round(flt.x),y:Math.round(flt.y),
+  w:Math.max(1,Math.round(flt.dw)),h:Math.max(1,Math.round(flt.dh))});
+/** 고른 네모를 그림 안으로 자른다. 밖으로 나간 게 전부면 null. */
+function clampRect(r){
+  const x=Math.max(0,Math.floor(r.x)),y=Math.max(0,Math.floor(r.y));
+  const x1=Math.min(base.w,Math.ceil(r.x+r.w)),y1=Math.min(base.h,Math.ceil(r.y+r.h));
+  return (x1>x&&y1>y)?{x,y,w:x1-x,h:y1-y}:null;
+}
+/** 고른 곳을 들어 올린다. copy 면 뜬 자리를 안 비운다(Alt+끌기). */
+function liftSel(copy){
+  if(!sel||flt||!base)return false;
+  const r=clampRect(sel); if(!r)return false;
+  const selWas=Object.assign({},sel);
+  const mk=cropMask(r);                     // 네모면 null
+  push();                                   // 들어 올린 것부터가 되돌리기 한 칸
+  redraw();                                 // 조각 없는 그림을 먼저 만들어 담아 둔다
+  fltBase=ctxOf().getImageData(0,0,base.w,base.h);
+  const from=mk
+    ? {t:'mask',x:r.x,y:r.y,w:r.w,h:r.h,mask:toB64(mk)}
+    : {t:'here',x:r.x,y:r.y,w:r.w,h:r.h};
+  // 표로 고른 것은 알갱이를 «오려서» 지고 다닌다 — 표 밖은 비워 둔다.
+  const b64=mk?toB64(maskedPixels(r,mk)):null;
+  flt={w:r.w,h:r.h,b64,x:r.x,y:r.y,dw:r.w,dh:r.h,rot:0,fx:0,fy:0,angle:0,
+    baseW:r.w,baseH:r.h,cx:r.x+r.w/2,cy:r.y+r.h/2,from,copy:copy?1:0,snapAt:undoStack.length,selWas};
+  // 떠 있는 동안은 네모 손잡이로 다룬다(아세프라이트도 그렇다). 표는 물릴 때 되살린다.
+  sel={x:r.x,y:r.y,w:r.w,h:r.h,mask:null};
+  redraw();drawSel();updateSelLab();
+  return true;
+}
+/** 뜬 자리를 비우는 손질 하나. 네모면 네모 지우기, 표면 표대로 지우기. */
+const eraseStroke=f=>f.t==='mask'
+  ?{t:'em',x:f.x,y:f.y,w:f.w,h:f.h,mask:f.mask}
+  :{t:'r',x:f.x,y:f.y,w:f.w,h:f.h};
+/** 지금 «고른 곳» 을 비우는 손질 하나. */
+function eraseSel(){
+  const r=clampRect(sel)||{x:sel.x,y:sel.y,w:sel.w,h:sel.h};
+  const mk=cropMask(r);
+  return mk?{t:'em',x:r.x,y:r.y,w:r.w,h:r.h,mask:toB64(mk)}
+           :{t:'r',x:r.x,y:r.y,w:r.w,h:r.h};
+}
+/** 고른 곳의 표를 «잘라낸 네모» 에 맞춰 오려 온다. 네모 통째면 null. */
+function cropMask(r){
+  if(!sel||!sel.mask)return null;
+  const m=new Uint8Array(r.w*r.h);
+  for(let y=0;y<r.h;y++)for(let x=0;x<r.w;x++){
+    const sx=r.x+x-sel.x,sy=r.y+y-sel.y;
+    if(sx<0||sy<0||sx>=sel.w||sy>=sel.h)continue;
+    m[y*r.w+x]=sel.mask[sy*sel.w+sx];
+  }
+  return m;
+}
+/** 그 네모의 알갱이를 표대로 오려 온다. 표 밖은 투명하게 둔다. */
+function maskedPixels(r,m){
+  const d=ctxOf().getImageData(r.x,r.y,r.w,r.h).data,out=new Uint8Array(r.w*r.h*4);
+  for(let i=0;i<r.w*r.h;i++){
+    if(!m[i])continue;
+    out[i*4]=d[i*4];out[i*4+1]=d[i*4+1];out[i*4+2]=d[i*4+2];out[i*4+3]=d[i*4+3];
+  }
+  return out;
+}
+/** 조각을 그림에 내려놓는다. 손질 한 줄만 남는다. */
+function dropFloat(){
+  if(!flt)return false;
+  const ss=fltStrokes();
+  flt=null;fltBase=null;
+  pushStrokes(ss);
+  redraw();drawSel();updateSelLab();
+  return true;
+}
+/** 붙이거나 들어 올린 것을 «없던 일로» 한다. 아직 안 구웠으니 그냥 버리면 된다. */
+function cancelFloat(){
+  if(!flt)return false;
+  const f=flt.from,snapAt=flt.snapAt,selWas=flt.selWas;
+  flt=null;fltBase=null;
+  // 들어 올릴 때 쌓아 둔 되돌리기 칸도 같이 걷는다 — 아무 일도 안 일어난 셈이니까.
+  if(undoStack.length===snapAt&&snapAt>0)undoStack.pop();
+  // 올가미로 고른 것이면 그 «표» 까지 그대로 되살린다
+  sel=selWas||((f.t==='here')?{x:f.x,y:f.y,w:f.w,h:f.h,mask:null}:null);
+  redraw();drawSel();updateSelLab();
+  return true;
+}
+// ── 비스듬히 돌리기 (RotSprite) ──────────────────────────────────────────
+// 도트 그림을 45도로 돌리면 «가장 가까운 점» 셈으로는 계단이 잘게 부서져 뭉갠다.
+// 아세프라이트가 쓰는 손은 이렇다 — 먼저 8배로 «도트 결을 살려» 키우고, 그 큰 그림에서
+// 돌린 다음, 8×8 칸마다 «가장 많은 색» 으로 도로 줄인다. 그래야 선이 안 부서진다.
+/** 도트 결을 살려 두 배로 키운다(EPX). 네 이웃이 같은 쪽으로 모서리를 채운다. */
+function scale2x(src,w,h){
+  const W=w*2,H=h*2,out=new Uint8Array(W*H*4);
+  const at=(x,y)=>{
+    x=Math.max(0,Math.min(w-1,x));y=Math.max(0,Math.min(h-1,y));
+    const i=(y*w+x)*4;return (src[i]<<24)|(src[i+1]<<16)|(src[i+2]<<8)|src[i+3];
+  };
+  const put=(x,y,v)=>{const o=(y*W+x)*4;
+    out[o]=(v>>>24)&255;out[o+1]=(v>>>16)&255;out[o+2]=(v>>>8)&255;out[o+3]=v&255};
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const P=at(x,y),A=at(x,y-1),B=at(x+1,y),C=at(x-1,y),D=at(x,y+1);
+    let e0=P,e1=P,e2=P,e3=P;
+    if(C===A&&C!==D&&A!==B)e0=A;
+    if(A===B&&A!==C&&B!==D)e1=B;
+    if(D===C&&D!==B&&C!==A)e2=C;
+    if(B===D&&B!==A&&D!==C)e3=D;
+    put(x*2,y*2,e0);put(x*2+1,y*2,e1);put(x*2,y*2+1,e2);put(x*2+1,y*2+1,e3);
+  }
+  return {px:out,w:W,h:H};
+}
+/** 비스듬히 돌린 알갱이를 새로 뜬다. deg 는 시계 방향. */
+function rotSprite(src,w,h,deg){
+  let b={px:src,w,h};
+  for(let i=0;i<3;i++)b=scale2x(b.px,b.w,b.h);      // 8배
+  const rad=deg*Math.PI/180,cs=Math.cos(rad),sn=Math.sin(rad);
+  const nw=Math.max(1,Math.ceil(Math.abs(w*cs)+Math.abs(h*sn)));
+  const nh=Math.max(1,Math.ceil(Math.abs(w*sn)+Math.abs(h*cs)));
+  const out=new Uint8Array(nw*nh*4),cnt=new Map();
+  for(let y=0;y<nh;y++)for(let x=0;x<nw;x++){
+    cnt.clear();
+    for(let sy=0;sy<8;sy++)for(let sx=0;sx<8;sx++){
+      const ox=(x+(sx+0.5)/8)-nw/2, oy=(y+(sy+0.5)/8)-nh/2;
+      const ux=( ox*cs+oy*sn)+w/2,  uy=(-ox*sn+oy*cs)+h/2;
+      const bx=Math.floor(ux*8),by=Math.floor(uy*8);
+      let k='-';
+      if(bx>=0&&by>=0&&bx<b.w&&by<b.h){
+        const i=(by*b.w+bx)*4;
+        if(b.px[i+3]!==0)k=b.px[i]+','+b.px[i+1]+','+b.px[i+2];
+      }
+      cnt.set(k,(cnt.get(k)||0)+1);
+    }
+    let best='-',bn=0;
+    for(const [k,n] of cnt)if(n>bn){bn=n;best=k}
+    if(best==='-')continue;
+    const v=best.split(','),o=(y*nw+x)*4;
+    out[o]=+v[0];out[o+1]=+v[1];out[o+2]=+v[2];out[o+3]=255;
+  }
+  return {px:out,w:nw,h:nh};
+}
+/** 떠 있는 조각의 «원본 알갱이» 를 챙겨 둔다. 비스듬히 돌리려면 알갱이가 있어야 한다. */
+function fltEnsurePixels(){
+  if(!flt||flt.src)return;
+  if(flt.b64){flt.src={w:flt.w,h:flt.h,b64:flt.b64};return}
+  // 네모로 뜬 것은 알갱이를 안 담고 있었다 — 조각 없는 그림에서 그 자리를 떠 온다.
+  const f=flt.from,tmp=document.createElement('canvas');
+  tmp.width=base.w;tmp.height=base.h;
+  const tc=tmp.getContext('2d',{willReadFrequently:true});
+  tc.putImageData(fltBase,0,0);
+  const d=tc.getImageData(f.x,f.y,f.w,f.h).data;
+  flt.src={w:f.w,h:f.h,b64:toB64(new Uint8Array(d))};
+}
+/**
+ * 조각을 그 각도로 돌린다. 언제나 «원본 알갱이» 에서 다시 뜬다 —
+ * 돌린 것을 또 돌리면 그때부터 뭉개지기 때문이다.
+ */
+function fltSetAngle(deg){
+  if(!flt)return;
+  deg=((Math.round(deg)%360)+360)%360;
+  flt.angle=deg;
+  if(deg%90===0){
+    // 직각은 원래 있던 «가장 가까운 점» 셈이 정확하다. 굳이 8배로 키울 것 없다.
+    if(flt.src){flt.b64=flt.src.b64;flt.w=flt.src.w;flt.h=flt.src.h}
+    flt.rot=deg;flt.free=0;
+    const sw=(deg===90||deg===270)?flt.h:flt.w;
+    const sh=(deg===90||deg===270)?flt.w:flt.h;
+    fltFitTo(sw,sh);
+    return;
+  }
+  fltEnsurePixels();
+  const r=rotSprite(fromB64(flt.src.b64),flt.src.w,flt.src.h,deg);
+  flt.b64=toB64(r.px);flt.w=r.w;flt.h=r.h;flt.rot=0;flt.free=1;
+  flt.pix=1;                                   // 이제부터는 알갱이째 굽는다
+  fltFitTo(r.w,r.h);
+}
+/** 조각의 «놓일 크기» 를 새 알갱이 크기에 맞춘다. 늘려 둔 배율과 가운데는 붙잡아 둔다. */
+function fltFitTo(nw,nh){
+  const oldW=flt.baseW||nw,oldH=flt.baseH||nh;
+  const sx=(flt.dw||oldW)/oldW,sy=(flt.dh||oldH)/oldH;
+  const cx=(flt.cx===undefined)?flt.x+flt.dw/2:flt.cx;
+  const cy=(flt.cy===undefined)?flt.y+flt.dh/2:flt.cy;
+  flt.baseW=nw;flt.baseH=nh;
+  flt.dw=Math.max(1,Math.round(nw*sx));flt.dh=Math.max(1,Math.round(nh*sy));
+  flt.x=Math.round(cx-flt.dw/2);flt.y=Math.round(cy-flt.dh/2);
+}
+/** 조각을 바꿔 놓는다(자리·크기·돌림). 굽지 않으니 몇 번을 해도 안 뭉갠다. */
+function fltSet(o){
+  if(!flt)return;
+  Object.assign(flt,o);
+  // 자리나 크기를 손댔으면 가운데를 다시 적어 둔다(돌릴 때 이 가운데를 붙잡는다)
+  if('x' in o||'dw' in o)flt.cx=flt.x+flt.dw/2;
+  if('y' in o||'dh' in o)flt.cy=flt.y+flt.dh/2;
+  const r=fltRect(); sel={x:r.x,y:r.y,w:r.w,h:r.h};
+  redraw();drawSel();updateSelLab();
+}
+/** 조각이 없으면 먼저 들어 올리고 나서 바꾼다. ⟳ ↔ ＋ 가 다 이 손을 쓴다. */
+function fltEdit(fn){
+  if(!flt&&!liftSel(false))return;
+  fn(flt);
+  fltSet({});
+}
+/** 손잡이를 끌어 크기를 바꾼다. 잡은 쪽 반대편은 못 박힌 채로 늘어난다. */
+function fltScale(dg,p,keep){
+  const f=dg.from,hz=dg.hz,R=f.x+f.w,B=f.y+f.h;
+  const mx=Math.round(p.x-dg.ox),my=Math.round(p.y-dg.oy);
+  let x=f.x,y=f.y,dw=f.w,dh=f.h;
+  if(hz.indexOf('w')>=0){x=Math.min(R-1,f.x+mx);dw=R-x}
+  if(hz.indexOf('e')>=0){dw=Math.max(1,f.w+mx)}
+  if(hz.indexOf('n')>=0){y=Math.min(B-1,f.y+my);dh=B-y}
+  if(hz.indexOf('s')>=0){dh=Math.max(1,f.h+my)}
+  if(keep&&hz.length===2){                    // Shift = 원래 비율 그대로 (모서리 손잡이만)
+    dh=Math.max(1,Math.round(dw*f.h/f.w));
+    if(hz.indexOf('n')>=0)y=B-dh;
+  }
+  fltSet({x,y,dw,dh});
+}
+/** 고른 곳을 그림째 복사한다. 빈 가장자리는 잘라 낸다 — 저장 파일이 그만큼 얇아진다. */
+function copySel(){
+  if(!sel||!base)return false;
+  const r=clampRect(sel); if(!r)return false;
+  const mk=cropMask(r);
+  // 표로 고른 것은 표 밖을 «비운 채로» 담는다 — 안 그러면 네모째 딸려 온다
+  const px=mk?maskedPixels(r,mk):ctxOf().getImageData(r.x,r.y,r.w,r.h).data;
+  let x0=r.w,y0=r.h,x1=-1,y1=-1;
+  for(let y=0;y<r.h;y++)for(let x=0;x<r.w;x++){
+    if(px[(y*r.w+x)*4+3]===0)continue;
+    if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+  }
+  if(x1<0)return false;                      // 통째로 비었으면 복사할 게 없다
+  const w=x1-x0+1,h=y1-y0+1,out=new Uint8Array(w*h*4);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const a=((y+y0)*r.w+(x+x0))*4,b=(y*w+x)*4;
+    out[b]=px[a];out[b+1]=px[a+1];out[b+2]=px[a+2];out[b+3]=px[a+3];
+  }
+  clipPx={w,h,x:r.x+x0,y:r.y+y0,b64:toB64(out)};
+  return true;
+}
+const toB64=u8=>{let s='';const CH=0x8000;
+  for(let i=0;i<u8.length;i+=CH)s+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
+  return btoa(s)};
+const fromB64=b=>{const s=atob(b||''),u=new Uint8Array(s.length);
+  for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u};
+/** 복사해 둔 조각을 이 낱장에 띄운다. 원래 있던 자리 그대로 놓는다(아세프라이트와 같다). */
+function pasteFloat(){
+  if(!clipPx||!base)return false;
+  dropFloat();
+  push();
+  const x=Math.max(0,Math.min(base.w-1,clipPx.x)),y=Math.max(0,Math.min(base.h-1,clipPx.y));
+  redraw();                                   // 밑칠은 «조각 없이» 한 번 담아 둔다
+  fltBase=ctxOf().getImageData(0,0,base.w,base.h);
+  flt={w:clipPx.w,h:clipPx.h,b64:clipPx.b64,x,y,dw:clipPx.w,dh:clipPx.h,rot:0,fx:0,fy:0,angle:0,
+    baseW:clipPx.w,baseH:clipPx.h,cx:x+clipPx.w/2,cy:y+clipPx.h/2,from:{t:'clip'},copy:0,snapAt:undoStack.length};
+  setTool('sel');
+  fltSet({});
+  return true;
+}
 /** 고른 사각형을 화면에 점선으로 그린다. 캔버스에 그리면 손질로 구워지므로 겹쳐 둔 칸으로 그린다. */
 function updateSelLab(){
   const l=document.getElementById('sellab');
-  if(l)l.textContent=sel?('고른 곳 '+sel.w+'×'+sel.h):'고른 곳 없음';
-  document.querySelectorAll('#selrow button').forEach(b=>{b.disabled=!sel});
+  if(l)l.textContent=sel?((flt?'떠 있는 조각 ':'고른 곳 ')+sel.w+'×'+sel.h):'고른 곳 없음';
+  document.querySelectorAll('#selrow button').forEach(b=>{
+    b.disabled=b.dataset.needflt?!flt:!sel});
+  const fr=document.getElementById('freerot');
+  if(fr&&!flt){fr.value=0;if(fr.nextSibling)fr.nextSibling.textContent='0도'}
+  const as=document.getElementById('adjscope');
+  if(as)as.textContent='색 손보기 — '+(sel?('고른 곳 '+sel.w+'×'+sel.h+' 에만'):'낱장 통째로');
+  const mk=document.querySelector('.fltmark'),cw=document.querySelector('.ed .cw');
+  if(flt&&!mk&&cw){const m=el('div','fltmark');m.textContent='떠 있음 — Enter 내려놓기 · Esc 물리기';cw.appendChild(m)}
+  if(!flt&&mk)mk.remove();
+}
+// 손잡이 여덟 개. 이름 안의 n/s/e/w 가 어느 변을 잡는지다.
+const HANDLES=['nw','n','ne','e','se','s','sw','w'];
+const handleAt=(r,hz)=>({
+  x:r.x+(hz.indexOf('w')>=0?0:hz.indexOf('e')>=0?r.w:r.w/2),
+  y:r.y+(hz.indexOf('n')>=0?0:hz.indexOf('s')>=0?r.h:r.h/2)});
+/** 누른 자리가 손잡이인지 — 화면에서 7점 안이면 잡은 것으로 본다. */
+function hitHandle(p){
+  if(!sel||!base||tool!=='sel')return null;
+  // 화면에서 6점 안이면 잡은 것으로 본다. 다만 조각이 작고 배율이 낮으면 손잡이 여덟 개가
+  // 조각을 통째로 삼켜 «안쪽을 끌어 옮기기» 가 안 된다 — 가운데 3분의 1은 늘 옮기기로 둔다.
+  const t=Math.min(6/base.z,Math.max(1,Math.min(sel.w,sel.h)/3));
+  for(const hz of HANDLES){const c=handleAt(sel,hz);
+    if(Math.abs(p.x-c.x)<=t&&Math.abs(p.y-c.y)<=t)return hz}
+  return null;
+}
+/**
+ * 네모가 아닌 «고른 곳» 의 테두리를 그린다.
+ * 점선 칸(.selbox)은 네모밖에 못 그린다 — 올가미로 고른 모양은 칸이 아니라 선으로 그려야
+ * 어디가 잡혔는지 보인다. 화면 배율대로 큰 칸에 그려야 선이 굵어지지 않는다.
+ */
+function drawSelOverlay(){
+  const ov=document.getElementById('selov');
+  if(!ov||!base)return;
+  const z=base.z,W=base.w*z,H=base.h*z;
+  if(ov.width!==W||ov.height!==H){ov.width=W;ov.height=H}
+  ov.style.width=W+'px';ov.style.height=H+'px';
+  const c=ov.getContext('2d');c.clearRect(0,0,W,H);
+  if(symOn){                                 // 대칭 축을 보여 준다 — 어디가 접히는지 알아야 한다
+    c.lineWidth=1;c.setLineDash([5,4]);c.strokeStyle='rgba(255,120,200,.85)';
+    c.beginPath();c.moveTo(W/2,0);c.lineTo(W/2,H);c.stroke();c.setLineDash([]);
+  }
+  if(!sel||!sel.mask)return;                 // 네모는 점선 칸이 맡는다
+  const at=(x,y)=>(x<0||y<0||x>=sel.w||y>=sel.h)?0:sel.mask[y*sel.w+x];
+  const seg=[];
+  for(let y=0;y<sel.h;y++)for(let x=0;x<sel.w;x++){
+    if(!at(x,y))continue;
+    const gx=(sel.x+x)*z,gy=(sel.y+y)*z;
+    if(!at(x,y-1))seg.push([gx,gy,gx+z,gy]);
+    if(!at(x,y+1))seg.push([gx,gy+z,gx+z,gy+z]);
+    if(!at(x-1,y))seg.push([gx,gy,gx,gy+z]);
+    if(!at(x+1,y))seg.push([gx+z,gy,gx+z,gy+z]);
+  }
+  const paint=(lw,st,dash)=>{c.lineWidth=lw;c.strokeStyle=st;c.setLineDash(dash);
+    c.beginPath();for(const s of seg){c.moveTo(s[0],s[1]);c.lineTo(s[2],s[3])}c.stroke()};
+  paint(3,'rgba(0,0,0,.75)',[]);             // 밝은 그림 위에서도 보이게 두 겹
+  paint(1,flt?'#ffd34d':'#fff',[4,3]);
 }
 function drawSel(){
+  drawSelOverlay();
   const box=document.querySelector('.selbox');
   if(!sel||!base){if(box)box.remove();return}
   const b=box||el('div','selbox');
+  b.className='selbox'+(flt?' flt':'');
   b.style.cssText='position:absolute;pointer-events:none;z-index:6;'
-    +'outline:1px dashed #fff;box-shadow:0 0 0 1px rgba(0,0,0,.7);'
+    +'outline:1px dashed '+(flt?'#ffd34d':'#fff')+';box-shadow:0 0 0 1px rgba(0,0,0,.7);'
     +'left:'+(sel.x*base.z)+'px;top:'+(sel.y*base.z)+'px;'
     +'width:'+(sel.w*base.z)+'px;height:'+(sel.h*base.z)+'px';
+  b.textContent='';
+  HANDLES.forEach(hz=>{const c=handleAt(sel,hz),d=el('div','h');
+    d.style.left=((c.x-sel.x)*base.z)+'px';d.style.top=((c.y-sel.y)*base.z)+'px';b.appendChild(d)});
   if(!box){const cv=document.getElementById('cv');if(cv)cv.parentNode.appendChild(b)}
-}
-/** 고른 조각에 손질 하나를 얹고 다시 그린다. */
-function selApply(o){
-  if(!sel)return;
-  push();
-  strokes.push(Object.assign({t:'blit',sx:sel.x,sy:sel.y,sw:sel.w,sh:sel.h,
-    dx:sel.x,dy:sel.y,dw:sel.w,dh:sel.h,rot:0,fx:0,fy:0,cut:1},o));
-  redraw();
 }
 /**
  * 그리던 붓질을 «편집기를 벗어나는 순간» 그 자리에서 적용한다.
@@ -1616,6 +2366,8 @@ function commitStrokes(){
   if(!openEd)return null;
   const k=openEd.key;
   if(mountedKey!==k)return null;              // 캔버스가 아직 안 붙었으면 붓질도 없다
+  dropFloat();                                // 떠 있던 조각도 여기서 박는다 — 안 그러면 조용히 사라진다
+  dropAdj();                                  // 밀어 둔 색 손보기도 같이 — 잃지 않게
   const now=edits[k]||[];
   if(JSON.stringify(now)===JSON.stringify(strokes))return null;
   push();
@@ -1645,8 +2397,9 @@ function editor(){
   const cw=el('div','cw');
   const inner=el('div','cwrap');
   const on=el('canvas');on.id='onion';const gr=el('canvas');gr.id='grid';const cv=el('canvas');cv.id='cv';
-  inner.append(on,cv,gr);cw.appendChild(inner);
-  if(onionOn&&openEd.i>0){const mk=el('div','onionmark');mk.textContent='앞 장 비침';cw.appendChild(mk)}
+  const ov=el('canvas');ov.id='selov';    // 올가미로 고른 «네모 아닌» 테두리를 그리는 칸
+  inner.append(on,cv,gr,ov);cw.appendChild(inner);
+  if(onionOn){const mk=el('div','onionmark');mk.textContent='앞뒤 '+onionN+'장 비침 — 파랑 앞 · 빨강 뒤';cw.appendChild(mk)}
   main.appendChild(cw);
 
   const T=el('div','tools');
@@ -1654,7 +2407,9 @@ function editor(){
   // 도구를 바꿀 때마다 render() 를 부르면 편집기가 통째로 다시 만들어지고
   // 캔버스가 새로 붙느라 화면이 깜빡인다. 단추 상태만 갈아끼운다.
   const toolBtns=[];
-  [['pencil','연필'],['eraser','지우개'],['picker','스포이드'],['bucket','페인트통'],['swap','색바꾸기'],['move','이동'],['sel','선택']]
+  [['pencil','연필'],['eraser','지우개'],['picker','스포이드'],['bucket','페인트통'],['swap','색바꾸기'],['move','이동'],
+   ['sel','네모 선택'],['lasso','올가미'],['ellipse','타원 선택'],['wand','마술봉'],
+   ['line','직선'],['rect','네모 그리기'],['oval','타원 그리기'],['shade','명암'],['brush','도장붓']]
     .forEach(([id,n])=>{const x=el('button');x.textContent=n;x.dataset.tool=id;
       x.setAttribute('aria-pressed',String(tool===id));
       x.onclick=()=>setTool(id);
@@ -1665,38 +2420,55 @@ function editor(){
   const selRow=el('div','cur');selRow.id='selrow';selRow.style.flexWrap='wrap';
   const sLab=el('span');sLab.className='mono';sLab.id='sellab';sLab.textContent='고른 곳 없음';
   selRow.appendChild(sLab);
-  const selBtn=(t,title,fn)=>{const x=el('button');x.textContent=t;x.title=title;
-    x.onclick=()=>{if(!sel)return;fn();drawSel();updateSelLab()};selRow.appendChild(x);return x};
-  selBtn('⟳','시계 방향으로 90도 돌리기',()=>{
-    // 가운데를 붙잡고 돈다 — 가로세로가 뒤바뀌므로 자리도 그만큼 옮긴다
-    const cx=sel.x+sel.w/2, cy=sel.y+sel.h/2;
-    const nw=sel.h, nh=sel.w;
-    const nx=Math.round(cx-nw/2), ny=Math.round(cy-nh/2);
-    selApply({dx:nx,dy:ny,dw:nw,dh:nh,rot:90});
-    sel={x:nx,y:ny,w:nw,h:nh};
+  const selBtn=(t,title,fn,needflt)=>{const x=el('button');x.textContent=t;x.title=title;
+    if(needflt)x.dataset.needflt='1';
+    x.onclick=()=>{if(needflt?!flt:!sel)return;fn();drawSel();updateSelLab()};selRow.appendChild(x);return x};
+  // 돌리기·뒤집기·크기는 전부 «떠 있는 채로» 한다. 안 구우니 몇 번을 눌러도 안 뭉갠다.
+  // 가운데를 붙잡고 돈다. 직각은 정확한 셈으로, 비스듬한 각은 도트 결을 살려서(RotSprite).
+  selBtn('⟳','시계 방향으로 90도 — 떠 있는 채로 도니 몇 번을 돌려도 안 뭉갭니다',
+    ()=>fltEdit(f=>fltSetAngle((f.angle||0)+90)));
+  // 돌린 뒤에도 «화면에서 보이는 대로» 뒤집혀야 한다 — 돌림에 맞춰 축을 골라 준다.
+  selBtn('↔','좌우 뒤집기',()=>fltEdit(f=>{
+    if(f.rot%180===0)f.fx=f.fx?0:1; else f.fy=f.fy?0:1}));
+  selBtn('↕','위아래 뒤집기',()=>fltEdit(f=>{
+    if(f.rot%180===0)f.fy=f.fy?0:1; else f.fx=f.fx?0:1}));
+  const scaleBy=k=>fltEdit(f=>{
+    const r=fltRect(),nw=Math.max(1,Math.round(r.w*k)),nh=Math.max(1,Math.round(r.h*k));
+    f.x=Math.round(r.x+r.w/2-nw/2);f.y=Math.round(r.y+r.h/2-nh/2);f.dw=nw;f.dh=nh;
   });
-  selBtn('↔','좌우 뒤집기',()=>selApply({fx:1}));
-  selBtn('↕','위아래 뒤집기',()=>selApply({fy:1}));
-  selBtn('＋','10% 크게 (가운데 기준)',()=>{
-    const nw=Math.max(1,Math.round(sel.w*1.1)), nh=Math.max(1,Math.round(sel.h*1.1));
-    const nx=Math.round(sel.x+sel.w/2-nw/2), ny=Math.round(sel.y+sel.h/2-nh/2);
-    selApply({dx:nx,dy:ny,dw:nw,dh:nh});
-    sel={x:nx,y:ny,w:nw,h:nh};
-  });
-  selBtn('－','10% 작게 (가운데 기준)',()=>{
-    const nw=Math.max(1,Math.round(sel.w*0.9)), nh=Math.max(1,Math.round(sel.h*0.9));
-    const nx=Math.round(sel.x+sel.w/2-nw/2), ny=Math.round(sel.y+sel.h/2-nh/2);
-    selApply({dx:nx,dy:ny,dw:nw,dh:nh});
-    sel={x:nx,y:ny,w:nw,h:nh};
-  });
+  selBtn('＋','10% 크게 (가운데 기준) — 모서리 손잡이를 끌어도 됩니다',()=>scaleBy(1.1));
+  selBtn('－','10% 작게 (가운데 기준) — 모서리 손잡이를 끌어도 됩니다',()=>scaleBy(0.9));
   selBtn('지우기','고른 곳을 비웁니다',()=>{
-    push();strokes.push({t:'r',x:sel.x,y:sel.y,w:sel.w,h:sel.h});redraw();
+    if(flt){                      // 떠 있는 걸 지우면 «뜬 자리를 비운 것» 만 남는다
+      const f=flt.from,copy=flt.copy;flt=null;fltBase=null;
+      if(!copy)pushStrokes([eraseStroke(f)]);
+      sel=null;redraw();return;
+    }
+    push();pushStrokes([eraseSel()]);redraw();
   });
-  selBtn('해제','고르기를 풉니다',()=>{sel=null});
+  // 비스듬히 돌리기 — 15도씩. 도트가 부서지지 않게 8배로 키워 돌린 뒤 도로 줄인다.
+  const rotRow=el('div','cur');
+  const rotLab=el('span');rotLab.className='mono';rotLab.style.minWidth='62px';rotLab.textContent='비스듬히';
+  const rotIn=el('input');rotIn.type='range';rotIn.id='freerot';rotIn.min=-180;rotIn.max=180;
+  rotIn.step=15;rotIn.value=0;rotIn.style.width='92px';
+  rotIn.title='고른 조각을 비스듬히 돌립니다 — 언제나 «원본 알갱이» 에서 다시 뜨므로 안 뭉갭니다';
+  const rotVal=el('span');rotVal.className='mono';rotVal.style.minWidth='38px';rotVal.textContent='0도';
+  rotIn.oninput=()=>{rotVal.textContent=rotIn.value+'도';
+    fltEdit(()=>fltSetAngle(+rotIn.value))};
+  rotRow.append(rotLab,rotIn,rotVal);
+
+  selBtn('내려놓기','떠 있는 조각을 그림에 박습니다 (Enter)',()=>{dropFloat();sel=null},true);
+  selBtn('물리기','붙이거나 들어 올린 것을 없던 일로 (Esc)',()=>cancelFloat(),true);
+  selBtn('해제','고르기를 풉니다',()=>{dropFloat();sel=null});
   T.appendChild(selRow);
+  T.appendChild(rotRow);
   const selHint=el('div');selHint.className='cap';selHint.style.textAlign='left';
-  selHint.innerHTML='<b>선택</b> 도구로 사각형을 그으세요 · 그 안을 <b>끌면 옮기고</b>, '
-    +'<b>Alt+끌면 복제</b> · <b>Ctrl+C</b> 복사 <b>Ctrl+V</b> 붙이기';
+  selHint.innerHTML='고르는 도구 넷 — <b>네모</b>(M) <b>올가미</b>(Q) <b>타원 선택</b> <b>마술봉</b>(W, 비슷한 색 덩어리) · '
+    +'그리는 도구 — <b>직선</b>(L) <b>네모</b>(U) <b>타원</b>(O), <b>Shift</b> 면 반듯하게 · '
+    +'<b>Shift</b> 더하기 <b>Alt</b> 빼기 · 안을 <b>끌면 들려서</b> 떠 있게 됩니다 — 그동안은 본체가 안 따라옵니다 · '
+    +'<b>모서리 손잡이</b>로 크기(Shift 면 비율 유지) · <b>Alt+끌면 복제</b> · '
+    +'<b>Ctrl+C</b> 복사 <b>Ctrl+X</b> 오려내기 <b>Ctrl+V</b> 붙이기 (다른 낱장에도 그림째 갑니다) · '
+    +'<b>화살표</b> 한 점씩 밀기 · <b>Enter</b> 내려놓기 <b>Esc</b> 물리기';
   T.appendChild(selHint);
 
   const cur=el('div','cur');const box=el('div','box');box.style.background=color;
@@ -1707,6 +2479,84 @@ function editor(){
   const bs=el('span');bs.id='brushnum';bs.className='mono';bs.textContent=brush;
   cur.append(bi,bs);T.appendChild(cur);
 
+  // 도형·대칭 손잡이 — 그리기 도구를 들었을 때 손이 가는 자리다.
+  const shRow=el('div','cur');shRow.style.flexWrap='wrap';
+  const fillBtn=el('button');fillBtn.id='fillshape';fillBtn.textContent='속 채우기';
+  fillBtn.title='네모·타원을 속까지 칠합니다 (끄면 테두리만)';
+  fillBtn.setAttribute('aria-pressed',String(fillShape));
+  fillBtn.onclick=()=>{fillShape=!fillShape;fillBtn.setAttribute('aria-pressed',String(fillShape))};
+  const dirBtn=el('button');dirBtn.id='shadedir';
+  const dirLab=()=>shadeDir<0?'명암 · 어둡게':'명암 · 밝게';
+  dirBtn.textContent=dirLab();
+  dirBtn.title='명암 붓이 어느 쪽으로 갈지 — 그 낱장이 쓰던 색들 사이를 한 눈금씩 오갑니다';
+  dirBtn.onclick=()=>{shadeDir=-shadeDir;dirBtn.textContent=dirLab()};
+  shRow.appendChild(dirBtn);
+  const dithBtn=el('button');dithBtn.id='dither';dithBtn.textContent='무늬';
+  dithBtn.title='한 점 걸러 한 점만 칠합니다 — 도트로 중간 톤을 내는 옛 손입니다(연필·페인트통·도형)';
+  dithBtn.setAttribute('aria-pressed',String(dithOn));
+  dithBtn.onclick=()=>{dithOn=!dithOn;dithBtn.setAttribute('aria-pressed',String(dithOn))};
+  shRow.appendChild(dithBtn);
+  const symBtn=el('button');symBtn.id='symmetry';symBtn.textContent='좌우 대칭';
+  symBtn.title='그은 것을 반대쪽에도 그대로 — 이펙트는 대칭이 많아 손이 반으로 줍니다';
+  symBtn.setAttribute('aria-pressed',String(symOn));
+  symBtn.onclick=()=>{symOn=!symOn;symBtn.setAttribute('aria-pressed',String(symOn));drawSel()};
+  shRow.append(fillBtn,symBtn);T.appendChild(shRow);
+
+  // 「모든 장에」 — 이펙트는 12장이 한 몸이라, 한 장만 고치는 일이 오히려 드물다.
+  const allRow=el('div','cur');
+  const allBtn=el('button');allBtn.id='allframes';allBtn.textContent='모든 장에 한 번에';
+  allBtn.title='켜 두면 색 손보기·조각 내려놓기·지우기가 이어 붙인 칸 전부에 그대로 얹힙니다';
+  allBtn.setAttribute('aria-pressed',String(allFrames));
+  allBtn.onclick=()=>{allFrames=!allFrames;allBtn.setAttribute('aria-pressed',String(allFrames));
+    allBtn.textContent=allFrames?('모든 장에 한 번에 · 켬('+seq.length+'칸)'):'모든 장에 한 번에';
+    toast(allFrames?('이제 '+seq.length+'칸 모두에 얹힙니다'):'이제 이 낱장에만 얹힙니다')};
+  if(allFrames)allBtn.textContent='모든 장에 한 번에 · 켬('+seq.length+'칸)';
+  allRow.appendChild(allBtn);T.appendChild(allRow);
+
+  // ── 색 손보기 ──────────────────────────────────────────────────────────
+  // 같은 이펙트를 속성별로 갈아입히는 손. 고른 곳이 있으면 «거기만», 없으면 낱장 통째로.
+  const adjBox=el('div');adjBox.id='adjbox';
+  const adjHead=el('div','cur');
+  const adjLab=el('span');adjLab.className='mono';adjLab.id='adjscope';adjLab.textContent='색 손보기 — 낱장 통째로';
+  adjHead.appendChild(adjLab);adjBox.appendChild(adjHead);
+  const adjRows=[['hue','색조 돌리기',-180,180,0,'도'],['sat','진하기',0,200,100,'%'],
+    ['val','밝기',0,200,100,'%'],['con','대비',-100,100,0,'']];
+  const adjVals=Object.assign({},ADJ0);
+  const startAdj=()=>{
+    // 미는 순간 «어디에» 얹을지 못 박는다. 미는 도중 고른 곳이 바뀌면 안 되기 때문이다.
+    if(adj)return;
+    const r=sel?clampRect(sel):null;
+    const mk=r?cropMask(r):null;
+    adj=Object.assign({t:'adj'},r?{x:r.x,y:r.y,w:r.w,h:r.h}:{x:0,y:0,w:base.w,h:base.h},
+      mk?{mask:toB64(mk)}:{},adjVals);
+  };
+  adjRows.forEach(([k,name,mn,mx,dv,unit])=>{
+    const row=el('div','cur');
+    const nm=el('span');nm.className='mono';nm.style.minWidth='62px';nm.textContent=name;
+    const inp=el('input');inp.type='range';inp.min=mn;inp.max=mx;inp.value=dv;inp.style.width='92px';
+    inp.dataset.adj=k;
+    const vv=el('span');vv.className='mono';vv.style.minWidth='40px';vv.textContent=dv+unit;
+    inp.oninput=()=>{adjVals[k]=+inp.value;vv.textContent=inp.value+unit;
+      startAdj();adj[k]=+inp.value;redraw()};
+    row.append(nm,inp,vv);adjBox.appendChild(row);
+  });
+  const adjBtns=el('div','cur');
+  const adjApply=el('button');adjApply.textContent='적용';adjApply.title='지금 보이는 색으로 굽습니다';
+  adjApply.onclick=()=>{if(!adj)return;push();dropAdj();
+    Object.assign(adjVals,ADJ0);
+    document.querySelectorAll('#adjbox input[data-adj]').forEach(i=>{
+      const d=({hue:0,sat:100,val:100,con:0})[i.dataset.adj];i.value=d;
+      i.parentNode.lastChild.textContent=d+(i.dataset.adj==='hue'?'도':i.dataset.adj==='con'?'':'%')});
+    toast('색을 손봤습니다')};
+  const adjReset=el('button');adjReset.textContent='되돌리기';adjReset.title='밀던 것을 원래대로';
+  adjReset.onclick=()=>{adj=null;Object.assign(adjVals,ADJ0);
+    document.querySelectorAll('#adjbox input[data-adj]').forEach(i=>{
+      const d=({hue:0,sat:100,val:100,con:0})[i.dataset.adj];i.value=d;
+      i.parentNode.lastChild.textContent=d+(i.dataset.adj==='hue'?'도':i.dataset.adj==='con'?'':'%')});
+    redraw()};
+  adjBtns.append(adjApply,adjReset);adjBox.appendChild(adjBtns);
+  T.appendChild(adjBox);
+
   const tl=el('div','cur');tl.innerHTML='<span class="mono">비슷한 색 허용</span>';
   const ti=el('input');ti.type='range';ti.min=0;ti.max=90;ti.value=tol;ti.style.width='90px';
   const tv=el('span');tv.className='mono';tv.textContent=tol;ti.oninput=e=>{tol=+e.target.value;tv.textContent=tol};
@@ -1715,13 +2565,23 @@ function editor(){
   const pw=el('div','pal');T.appendChild(pw);
   const opts=el('div','cur');
   const ob=el('button');ob.textContent='어니언스킨';ob.setAttribute('aria-pressed',String(onionOn));
-  ob.title='앞 장을 파랗게 비쳐 보여줍니다 — 움직임을 보며 손댈 때 씁니다';
+  ob.title='앞뒤 장을 비쳐 보여줍니다 — 앞은 파랗게, 뒤는 붉게. 움직임을 보며 손댈 때 씁니다';
   ob.onclick=()=>{onionOn=!onionOn;ob.setAttribute('aria-pressed',String(onionOn));
     const on=document.getElementById('onion');if(on)drawOnion(on);
     const mk=document.querySelector('.onionmark');
-    if(onionOn&&openEd.i>0&&!mk){const m=el('div','onionmark');m.textContent='앞 장 비침';document.querySelector('.cw').appendChild(m)}
+    if(onionOn&&!mk){const m=el('div','onionmark');m.textContent='앞뒤 '+onionN+'장 비침 — 파랑 앞 · 빨강 뒤';document.querySelector('.cw').appendChild(m)}
     if(!onionOn&&mk)mk.remove();
   };opts.appendChild(ob);
+  // 몇 장까지 비출지 — 빠른 이펙트는 한 장, 느린 것은 두세 장을 봐야 흐름이 보인다
+  const onSel=el('select');onSel.id='onionn';
+  onSel.title='앞뒤로 몇 장까지 비출지';
+  [1,2,3].forEach(n=>{const o=el('option');o.value=String(n);o.textContent='앞뒤 '+n+'장';onSel.appendChild(o)});
+  onSel.value=String(onionN);
+  onSel.onchange=()=>{onionN=+onSel.value;
+    const on=document.getElementById('onion');if(on)drawOnion(on);
+    const mk=document.querySelector('.onionmark');
+    if(mk)mk.textContent='앞뒤 '+onionN+'장 비침 — 파랑 앞 · 빨강 뒤'};
+  opts.appendChild(onSel);
   const ub=el('button');ub.id='eu';ub.textContent='되돌리기';
   ub.onclick=()=>{
     // 편집기 안에서 눌러도 같은 역사를 되돌린다. 여기만 따로 돌면
@@ -1748,15 +2608,19 @@ function editor(){
   T.appendChild(hint);
   main.appendChild(T);wrap.appendChild(main);
 
-  setTimeout(()=>{mount(cv,on,gr,pw);drawSel();updateSelLab()},0);
+  setTimeout(()=>{mount(cv,on,gr,pw);drawSel();updateSelLab();applyCursor()},0);
   return wrap;
 }
 /** 도구 바꾸기 — 단추와 단축키가 같은 자리를 쓴다. render() 를 부르면 캔버스가
     새로 붙어 그리던 게 끊기므로 단추 상태만 갈아끼운다. */
 function setTool(id){
+  // 딴 도구를 들면 떠 있던 조각은 그 자리에 내려놓는다(아세프라이트와 같다).
+  // 안 그러면 연필을 드는 순간 조각이 «아무 말 없이» 사라진다.
+  if(SELTOOLS.indexOf(id)<0)dropFloat();
   tool=id;
   document.querySelectorAll('.tgrid button[data-tool]').forEach(b=>
     b.setAttribute('aria-pressed',String(b.dataset.tool===id)));
+  applyCursor();
 }
 /** 붓 굵기 — 대괄호 글쇠와 슬라이더가 같은 자리를 쓴다. */
 function setBrush(v){
@@ -1780,6 +2644,7 @@ function setZoom(z){
   ['cv','onion','grid'].forEach(id=>{const c=document.getElementById(id);
     if(c){c.style.width=base.w*z+'px';c.style.height=base.h*z+'px'}});
   const gr=document.getElementById('grid');if(gr)drawGrid(gr,z);
+  drawSel();                       // 고른 테두리도 배율을 따라간다
   const lab=document.getElementById('zlab');if(lab)lab.textContent=z+'배';
 }
 /**
@@ -1817,7 +2682,7 @@ function mount(cv,on,gr,pw){
     // 여기서 무조건 저장본을 다시 읽으면 아직 '적용' 안 한 작업이 조용히 사라진다.
     // 칸에 제 손질이 없으면 재료 낱장 손질에서 «베껴» 시작한다 — 여기서부터 갈라진다.
     const k=openEd.key;
-    if(mountedKey!==k){ strokes=(edits[k]||edits[K(openEd.src,openEd.i)]||[]).slice(); mountedKey=k; sel=null; }
+    if(mountedKey!==k){ strokes=(edits[k]||edits[K(openEd.src,openEd.i)]||[]).slice(); mountedKey=k; sel=null; flt=null; fltBase=null; }
     redraw();drawOnion(on);buildPal(pw);
     bindCanvas(cv);
   };
@@ -1836,14 +2701,68 @@ function setColor(hex){
 const hexToRgbCss=h=>'rgb('+[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)).join(',')+')';
 function ctxOf(){return document.getElementById('cv').getContext('2d',{willReadFrequently:true})}
 function redraw(){
-  const c=ctxOf();c.clearRect(0,0,base.w,base.h);c.drawImage(base.img,0,0);
-  for(const s of strokes)applyOne(c,s,base.w,base.h);
+  const c=ctxOf();
+  // 조각이 떠 있는 동안은 밑칠을 처음부터 다시 하지 않는다 — 끌 때마다 손질을
+  // 수십 개씩 다시 얹으면 손이 무거워진다. 담아 둔 «조각 없는 그림» 을 도로 깐다.
+  if(flt&&fltBase)c.putImageData(fltBase,0,0);
+  else{c.clearRect(0,0,base.w,base.h);c.drawImage(base.img,0,0);
+    for(const s of strokes)applyOne(c,s,base.w,base.h)}
+  // 미리보기와 내려놓기가 «같은 손질» 을 쓴다. 어긋날 자리가 아예 없다.
+  for(const s of fltStrokes())applyOne(c,s,base.w,base.h);
+  if(shapePrev)for(const s of shapePrev)applyOne(c,s,base.w,base.h);
+  if(shade){const sh=shadeStroke();if(sh)applyOne(c,sh,base.w,base.h)}
+  if(brushDrag){const bs=brushStroke();if(bs)applyOne(c,bs,base.w,base.h)}
+  if(adj&&!adjIdle(adj))applyOne(c,adj,base.w,base.h);
 }
 function applyOne(c,s,W,H){
   const w=W||base.w,h=H||base.h;
   // 전부 점 단위로 센다. canvas 로 그리면 가장자리가 부드럽게 칠해져(반투명 점) 굽는 쪽과
   // 갈린다 — 실측 16384점 중 58점이 달랐다. 픽셀아트는 딱 떨어지는 쪽이 맞다.
   pixelOp(c,s,w,h);
+}
+/**
+ * 색 손보기 한 판. 편집기와 굽는 쪽이 **글자 그대로 같은 셈** 이어야 하므로
+ * 두 파일에 같은 함수를 둔다(scripts/test-strokes.mjs 가 매번 둘을 맞대 본다).
+ *   hue -180~180 도 돌리기 · sat/val 0~200 % · con -100~100 대비
+ * 차례: 색조·진하기·밝기 를 먼저, 대비를 마지막에. 투명한 점은 안 건드린다.
+ */
+function adjPixels(px,w,h,s){
+  const X0=Math.max(0,Math.floor(s.x??0)),Y0=Math.max(0,Math.floor(s.y??0));
+  const X1=Math.min(w,Math.ceil((s.x??0)+(s.w??w))),Y1=Math.min(h,Math.ceil((s.y??0)+(s.h??h)));
+  const m=s.mask?fromB64(s.mask):null;
+  const mw=s.w??w;
+  if(m&&m.length<(s.w??w)*(s.h??h))return;
+  const hue=(s.hue||0),sat=(s.sat===undefined?100:s.sat)/100,val=(s.val===undefined?100:s.val)/100;
+  const con=s.con||0,k=(259*(con+255))/(255*(259-con));
+  for(let y=Y0;y<Y1;y++)for(let x=X0;x<X1;x++){
+    if(m&&!m[(y-Y0)*mw+(x-X0)])continue;
+    const i=(y*w+x)*4;
+    if(px[i+3]===0)continue;
+    let r=px[i]/255,g=px[i+1]/255,b=px[i+2]/255;
+    if(hue||sat!==1||val!==1){
+      const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;
+      let H=0;
+      if(d){
+        if(mx===r)H=((g-b)/d+(g<b?6:0));
+        else if(mx===g)H=(b-r)/d+2;
+        else H=(r-g)/d+4;
+        H*=60;
+      }
+      let S=mx?d/mx:0,V=mx;
+      H=(H+hue)%360; if(H<0)H+=360;
+      S=Math.max(0,Math.min(1,S*sat));
+      V=Math.max(0,Math.min(1,V*val));
+      const c2=V*S,xx=c2*(1-Math.abs((H/60)%2-1)),m2=V-c2;
+      const t=Math.floor(H/60)%6;
+      const rgb=[[c2,xx,0],[xx,c2,0],[0,c2,xx],[0,xx,c2],[xx,0,c2],[c2,0,xx]][t];
+      r=rgb[0]+m2;g=rgb[1]+m2;b=rgb[2]+m2;
+    }
+    let R=r*255,G=g*255,B=b*255;
+    if(con){R=(R-128)*k+128;G=(G-128)*k+128;B=(B-128)*k+128}
+    px[i]=Math.max(0,Math.min(255,Math.round(R)));
+    px[i+1]=Math.max(0,Math.min(255,Math.round(G)));
+    px[i+2]=Math.max(0,Math.min(255,Math.round(B)));
+  }
 }
 function pixelOp(c,s,W,H){
   const w=W||base.w,h=H||base.h;
@@ -1859,13 +2778,81 @@ function pixelOp(c,s,W,H){
       if(dx*dx+dy*dy<=rr)fn((y*w+x)*4);
     }
   };
+  // 무늬(dith)가 켜져 있으면 «한 점 걸러» 만 칠한다 — 도트로 중간 톤을 내는 옛 손이다.
+  const dith=(i)=>{const q=i/4,x=q%w,y=(q/w)|0;return (x+y)%2===0};
   if(s.t==='c'){circle(i=>{px[i+3]=0})}
   else if(s.t==='p'){const [r,g,b]=s.color||[255,255,255];
-    circle(i=>{px[i]=r;px[i+1]=g;px[i+2]=b;px[i+3]=255})}
+    circle(i=>{if(s.dith&&!dith(i))return;px[i]=r;px[i+1]=g;px[i+2]=b;px[i+3]=255})}
   else if(s.t==='r'){
     const x0=Math.max(0,Math.floor(s.x)),y0=Math.max(0,Math.floor(s.y));
     const x1=Math.min(w,Math.ceil(s.x+s.w)),y1=Math.min(h,Math.ceil(s.y+s.h));
     for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)px[(y*w+x)*4+3]=0;
+  }
+  else if(s.t==='stamps'){
+    // 고른 조각을 «붓» 으로 — 한 알갱이 꾸러미를 여러 자리에 툭툭 찍는다.
+    // 자리마다 손질을 따로 두면 알갱이가 그 수만큼 복사돼 저장 파일이 부푼다. 꾸러미는 하나다.
+    const buf=fromB64(s.data),sw=Math.max(1,s.sw|0),sh=Math.max(1,s.sh|0);
+    if(buf.length<sw*sh*4){c.putImageData(d,0,0);return}
+    for(const at of (s.at||[])){
+      const dx=Math.round(at[0]),dy=Math.round(at[1]);
+      for(let y=0;y<sh;y++)for(let x=0;x<sw;x++){
+        const b=(y*sw+x)*4; if(buf[b+3]===0)continue;
+        const gx=dx+x,gy=dy+y; if(gx<0||gy<0||gx>=w||gy>=h)continue;
+        const a=(gy*w+gx)*4;
+        px[a]=buf[b];px[a+1]=buf[b+1];px[a+2]=buf[b+2];px[a+3]=buf[b+3];
+      }
+    }
+  }
+  else if(s.t==='sh'){
+    // 명암 — 칠하는 게 아니라 «그 칸이 원래 쓰던 색들» 사이를 한 눈금씩 오간다.
+    // ramp 는 이 낱장이 쓰는 색을 어두운 것부터 밝은 것까지 줄 세운 것.
+    // steps 는 점마다 몇 눈금 옮길지(붓이 지나간 횟수). dir 은 +1 밝게 / -1 어둡게.
+    // 색을 새로 만들지 않으니 도트 그림의 색 수가 안 늘어난다 — 이게 픽셀아트의 명암이다.
+    const st=fromB64(s.steps),ramp=s.ramp||[];
+    if(!ramp.length||st.length<s.w*s.h){c.putImageData(d,0,0);return}
+    const dir=s.dir<0?-1:1;
+    for(let y=0;y<s.h;y++)for(let x=0;x<s.w;x++){
+      const n=st[y*s.w+x]; if(!n)continue;
+      const gx=s.x+x,gy=s.y+y; if(gx<0||gy<0||gx>=w||gy>=h)continue;
+      const i=(gy*w+gx)*4; if(px[i+3]===0)continue;
+      let best=0,bd=1e9;
+      for(let k=0;k<ramp.length;k++){
+        const a=px[i]-ramp[k][0],b=px[i+1]-ramp[k][1],g=px[i+2]-ramp[k][2];
+        const dd=a*a+b*b+g*g; if(dd<bd){bd=dd;best=k}
+      }
+      const j=Math.max(0,Math.min(ramp.length-1,best+dir*n));
+      px[i]=ramp[j][0];px[i+1]=ramp[j][1];px[i+2]=ramp[j][2];
+    }
+  }
+  else if(s.t==='pm'){
+    // 표대로 칠하기 — 직선·네모·타원이 전부 이 하나로 구워진다.
+    // 도형마다 손질을 따로 두면 두 런타임에 같은 셈을 네 벌씩 둬야 한다. 표 하나면 된다.
+    const m=fromB64(s.mask);
+    if(m.length<s.w*s.h){c.putImageData(d,0,0);return}
+    const [cr,cg,cb]=s.color||[255,255,255];
+    for(let y=0;y<s.h;y++)for(let x=0;x<s.w;x++){
+      if(!m[y*s.w+x])continue;
+      const gx=s.x+x,gy=s.y+y; if(gx<0||gy<0||gx>=w||gy>=h)continue;
+      const i=(gy*w+gx)*4;
+      px[i]=cr;px[i+1]=cg;px[i+2]=cb;px[i+3]=255;
+    }
+  }
+  else if(s.t==='adj'){
+    // 색 손보기 — 색조 돌리기·진하기·밝기·대비.
+    // 같은 이펙트를 «불 → 물 → 풀» 로 갈아입히는 손이다. 고른 곳만, 또는 낱장 통째로.
+    // 굽는 쪽(lib/fxgif.mjs)과 **같은 셈** 이어야 한다 — 순서까지 같아야 한다.
+    adjPixels(px,w,h,s);
+  }
+  else if(s.t==='em'){
+    // 표대로 비우기 — 올가미·마술봉으로 고른 «네모 아닌» 자리를 지운다.
+    // mask 는 한 점에 한 자, 1이면 지운다. w×h 만큼 담긴다.
+    const m=fromB64(s.mask);
+    if(m.length<s.w*s.h){c.putImageData(d,0,0);return}
+    for(let y=0;y<s.h;y++)for(let x=0;x<s.w;x++){
+      if(!m[y*s.w+x])continue;
+      const gx=s.x+x,gy=s.y+y; if(gx<0||gy<0||gx>=w||gy>=h)continue;
+      px[(gy*w+gx)*4+3]=0;
+    }
   }
   else if(s.t==='swap'){const [fr,fg,fb]=s.from,[tr,tg,tb]=s.to,t=(s.tol??20)**2*3;
     for(let i=0;i<px.length;i+=4){if(px[i+3]<40)continue;const a=px[i]-fr,b=px[i+1]-fg,g=px[i+2]-fb;
@@ -1877,30 +2864,39 @@ function pixelOp(c,s,W,H){
       const a=px[i]-seed[0],b=px[i+1]-seed[1],g=px[i+2]-seed[2];return a*a+b*b+g*g<=t};
     const seen=new Uint8Array(w*h),st=[sy*w+sx];seen[sy*w+sx]=1;
     while(st.length){const p=st.pop(),i=p*4;if(!near(i))continue;
-      px[i]=tr;px[i+1]=tg;px[i+2]=tb;px[i+3]=255;
+      if(!s.dith||((p%w)+((p/w)|0))%2===0){px[i]=tr;px[i+1]=tg;px[i+2]=tb;px[i+3]=255}
       const x=p%w,y=(p/w)|0;
       if(x>0&&!seen[p-1]){seen[p-1]=1;st.push(p-1)}if(x<w-1&&!seen[p+1]){seen[p+1]=1;st.push(p+1)}
       if(y>0&&!seen[p-w]){seen[p-w]=1;st.push(p-w)}if(y<h-1&&!seen[p+w]){seen[p+w]=1;st.push(p+w)}}}
-  else if(s.t==='blit'){
+  else if(s.t==='blit'||s.t==='stamp'){
+    // blit  = 이 그림 «안» 의 사각형을 떠서 옮긴다(알갱이를 안 담는다).
+    // stamp = 다른 낱장에서 온 조각이라 이 그림엔 원본이 없다. 알갱이(data)를 지고 다닌다.
+    //         data 는 점 하나에 RGBA 넉 자를 통째로 base64 로 적은 것. sw×sh 크기다.
     // 고른 사각형을 떠서 돌리고·크기를 바꿔 다른 자리에 놓는다.
     //   sx,sy,sw,sh  떠 올 자리        dx,dy,dw,dh  놓을 자리(크기까지)
     //   rot 0/90/180/270 (시계 방향)   fx,fy 좌우·위아래 뒤집기   cut 1이면 떠 온 자리는 비운다
     // 픽셀아트라 «가장 가까운 점» 으로만 늘린다(부드럽게 섞으면 도트가 뭉갠다).
     // 투명한 점은 안 그린다 — 붙인 조각이 바탕을 지우면 안 되기 때문이다.
-    const sx=Math.round(s.sx),sy=Math.round(s.sy);
+    const sx=Math.round(s.sx||0),sy=Math.round(s.sy||0);
     const sw=Math.max(1,Math.round(s.sw)),sh=Math.max(1,Math.round(s.sh));
     const dw=Math.max(1,Math.round(s.dw??sw)),dh=Math.max(1,Math.round(s.dh??sh));
     const dx=Math.round(s.dx),dy=Math.round(s.dy);
     const rot=((Math.round((s.rot||0)/90)*90)%360+360)%360;
-    const cut=new Uint8Array(sw*sh*4);
-    for(let y=0;y<sh;y++)for(let x=0;x<sw;x++){
-      const gx=sx+x,gy=sy+y; if(gx<0||gy<0||gx>=w||gy>=h)continue;
-      const a=(gy*w+gx)*4,b=(y*sw+x)*4;
-      cut[b]=px[a];cut[b+1]=px[a+1];cut[b+2]=px[a+2];cut[b+3]=px[a+3];
+    let cut;
+    if(s.t==='stamp'){
+      cut=fromB64(s.data);
+      if(cut.length<sw*sh*4){c.putImageData(d,0,0);return}   // 담긴 알갱이가 모자라면 손대지 않는다
+    }else{
+      cut=new Uint8Array(sw*sh*4);
+      for(let y=0;y<sh;y++)for(let x=0;x<sw;x++){
+        const gx=sx+x,gy=sy+y; if(gx<0||gy<0||gx>=w||gy>=h)continue;
+        const a=(gy*w+gx)*4,b=(y*sw+x)*4;
+        cut[b]=px[a];cut[b+1]=px[a+1];cut[b+2]=px[a+2];cut[b+3]=px[a+3];
+      }
+      if(s.cut){for(let y=0;y<sh;y++)for(let x=0;x<sw;x++){
+        const gx=sx+x,gy=sy+y; if(gx<0||gy<0||gx>=w||gy>=h)continue;
+        px[(gy*w+gx)*4+3]=0}}
     }
-    if(s.cut){for(let y=0;y<sh;y++)for(let x=0;x<sw;x++){
-      const gx=sx+x,gy=sy+y; if(gx<0||gy<0||gx>=w||gy>=h)continue;
-      px[(gy*w+gx)*4+3]=0}}
     const rw=(rot===90||rot===270)?sh:sw, rh=(rot===90||rot===270)?sw:sh;
     for(let oy=0;oy<dh;oy++)for(let ox=0;ox<dw;ox++){
       const rx=Math.min(rw-1,Math.floor(ox*rw/dw)), ry=Math.min(rh-1,Math.floor(oy*rh/dh));
@@ -1932,10 +2928,39 @@ function drawGrid(gr,z){
   for(let y=0;y<=gr.height;y++){c.beginPath();c.moveTo(0,y);c.lineTo(gr.width,y);c.stroke()}
   c.restore();
 }
+/**
+ * 어니언스킨 — 앞뒤 장을 비쳐 준다.
+ *
+ * 예전에는 «바로 앞 한 장» 만, 그것도 CSS 로 통째로 파랗게 물들여 보여줬다. 그래서
+ * 앞뒤를 같이 볼 수 없었고(움직임은 앞뒤를 같이 봐야 보인다), 여러 장을 겹치면
+ * 어느 게 앞이고 어느 게 뒤인지 구분이 안 됐다.
+ * 이제 앞 장은 파랗게, 뒷 장은 붉게, 멀수록 옅게 그린다 — 아세프라이트와 같은 손이다.
+ */
 function drawOnion(on){
   const c=on.getContext('2d');c.clearRect(0,0,on.width,on.height);
-  if(!onionOn||openEd.i===0)return;
-  const prev=new Image();prev.onload=()=>c.drawImage(prev,0,0);prev.src=furl(openEd.src,openEd.i-1);
+  if(!onionOn||!openEd)return;
+  const n=meta[openEd.src]&&meta[openEd.src].fills?meta[openEd.src].fills.length:0;
+  const jobs=[];
+  for(let k=1;k<=onionN;k++){
+    const back=openEd.i-k, fwd=openEd.i+k;
+    const a=0.38/k;                                  // 멀수록 옅게
+    if(back>=0)jobs.push([back,'#4d8cff',a]);        // 앞 장은 파랗게
+    if(n&&fwd<n)jobs.push([fwd,'#ff6b5c',a]);        // 뒷 장은 붉게
+  }
+  const tmp=document.createElement('canvas');tmp.width=on.width;tmp.height=on.height;
+  const tc=tmp.getContext('2d');
+  jobs.forEach(([i,tint,a])=>{
+    const im=new Image();
+    im.onload=()=>{
+      tc.clearRect(0,0,tmp.width,tmp.height);
+      tc.globalCompositeOperation='source-over';tc.drawImage(im,0,0);
+      tc.globalCompositeOperation='source-in';    // 그림이 있는 자리만 물들인다
+      tc.fillStyle=tint;tc.fillRect(0,0,tmp.width,tmp.height);
+      tc.globalCompositeOperation='source-over';
+      c.globalAlpha=a;c.drawImage(tmp,0,0);c.globalAlpha=1;
+    };
+    im.src=furl(openEd.src,i);
+  });
 }
 async function buildPal(pw){
   const r=await fetch('/api/palette?dir='+encodeURIComponent(cur.dir)+'&kind='+cur.kind+'&src='+openEd.src+'&i='+openEd.i);
@@ -1967,15 +2992,15 @@ function bindCanvas(cv){
   // 버튼)는 Aseprite·Canva 가 같이 쓰는 손이다.
   const scBox=cv.closest('.cw');
   let pan=null;
-  const stopPan=()=>{ if(!pan)return; pan=null; cv.style.cursor=spaceDown?'grab':'crosshair'; };
+  const stopPan=()=>{ if(!pan)return; pan=null; applyCursor(); };
   addEventListener('pointermove',e=>{ if(!pan||!scBox)return;
     scBox.scrollLeft=pan.l-(e.clientX-pan.x); scBox.scrollTop=pan.t-(e.clientY-pan.y); });
   addEventListener('pointerup',stopPan);
   addEventListener('pointercancel',stopPan);
 
   // 「선택」 도구 — 사각형을 긋고, 그 안을 끌면 조각이 따라온다.
-  let selDrag=null;
-  const inSel=p=>sel&&p.x>=sel.x&&p.y>=sel.y&&p.x<sel.x+sel.w&&p.y<sel.y+sel.h;
+  let selDrag=null,shapeDrag=null;
+  const inSel=p=>selHas(p.x,p.y);   // 올가미로 고른 «표» 까지 본다
 
   cv.onpointerdown=e=>{
     if((spaceDown||e.button===1)&&scBox){          // 밀기가 그리기보다 먼저다
@@ -1983,10 +3008,32 @@ function bindCanvas(cv){
       pan={x:e.clientX,y:e.clientY,l:scBox.scrollLeft,t:scBox.scrollTop};return;
     }
     if(e.button!==0)return;                        // 오른쪽·가운데 버튼으로는 안 그린다
+    e.preventDefault();                            // 끌면서 옆 글자가 잡히는 것을 막는다
     cv.setPointerCapture(e.pointerId);const p=pos(e);
-    if(tool==='sel'){
-      if(inSel(p)){ selDrag={mode:e.altKey?'copy':'move',from:Object.assign({},sel),ox:p.x,oy:p.y,dx:0,dy:0}; }
-      else { selDrag={mode:'new',ax:Math.floor(p.x),ay:Math.floor(p.y)}; sel={x:Math.floor(p.x),y:Math.floor(p.y),w:1,h:1}; drawSel(); updateSelLab(); }
+    if(isSelTool()){
+      const add=e.shiftKey,sub=e.altKey&&!inSel(p);
+      if(!add&&!sub){
+        const hz=hitHandle(p);
+        if(hz){                                  // 손잡이가 조각 «안쪽» 보다 먼저다
+          if(!flt&&!liftSel(false))return;
+          selDrag={mode:'scale',hz,ox:p.x,oy:p.y,from:fltRect()};
+          painting=true;return;
+        }
+      }
+      if(inSel(p)&&!add){
+        // 처음 끄는 순간 «들어 올린다». 이때부터 본체는 안 따라온다.
+        if(!flt&&!liftSel(e.altKey))return;
+        selDrag={mode:'move',ox:p.x-flt.x,oy:p.y-flt.y};
+        painting=true;return;
+      }
+      dropFloat();                               // 바깥을 누르면 떠 있던 것을 내려놓는다
+      const op=add?'add':(sub?'sub':'new');
+      const prev=(op==='new')?null:fullMask();
+      if(tool==='wand'){                         // 마술봉은 «누르는» 도구다. 끌 게 없다.
+        wandSelect(p,op,prev);painting=false;return;
+      }
+      selDrag={mode:'new',op,prev,ax:Math.floor(p.x),ay:Math.floor(p.y),pts:[[p.x,p.y]]};
+      combineSel(shapeMask(selDrag,p),op,prev);
       painting=true;return;
     }
     if(tool==='picker'){const c=ctxOf();const d=c.getImageData(Math.floor(p.x),Math.floor(p.y),1,1).data;
@@ -1995,18 +3042,33 @@ function bindCanvas(cv){
     // 여기서부터는 그림이 바뀐다. **긋기 전에** 지금 모습을 역사에 남긴다 —
     // 끌어 그은 한 번이 점 수십 개여도 되돌리기 한 번에 통째로 돌아가야 한다.
     push();
-    if(tool==='bucket'){strokes.push({t:'fill',x:rd(p.x),y:rd(p.y),color:hex2rgb(color),tol});redraw();return}
+    if(tool==='bucket'){strokes.push({t:'fill',x:rd(p.x),y:rd(p.y),color:hex2rgb(color),tol,dith:dithOn?1:0});redraw();return}
     if(tool==='swap'){const c=ctxOf();const d=c.getImageData(Math.floor(p.x),Math.floor(p.y),1,1).data;
       strokes.push({t:'swap',from:[d[0],d[1],d[2]],to:hex2rgb(color),tol});redraw();return}
     if(tool==='move'){last=p;painting=true;return}
+    if(tool==='brush'){
+      if(!clipPx){toast('먼저 「고른 곳」 을 Ctrl+C 로 복사하세요 — 그걸 붓으로 씁니다','err');return}
+      brushDrag=null;brushDab(p);painting=true;redraw();return;
+    }
+    if(tool==='shade'){shade=null;shadeDab(p);painting=true;redraw();return}
+    if(isShapeTool()){
+      // 도형은 «손 뗄 때» 구워진다. 그 전까지는 구울 손질을 그대로 얹어 보여만 준다.
+      shapeDrag={a:p};shapePrev=shapeStrokes(shapeToMask(p,p,false));
+      painting=true;redraw();return;
+    }
     painting=true;stroke(p);
   };
   // 굵기를 숫자로만 두면 그어 봐야 안다. 그을 자리에 동그라미를 띄운다.
   const bcur=document.createElement('div');bcur.className='brushcur';
   cv.parentNode.appendChild(bcur);
   const moveBrushCur=e=>{
+    // 「선택」 은 어디를 잡느냐로 하는 일이 다르다 — 손 모양으로 미리 알려 준다.
+    // 모서리 손잡이면 늘리기, 안쪽이면 옮기기, 바깥이면 새로 긋기.
+    if(isSelTool()&&base&&!pan&&!spaceDown&&!selDrag){
+      const q=pos(e),hz=hitHandle(q);
+      cv.style.cursor=hz?HZCUR[hz]:(inSel(q)?'move':'crosshair');
+    }
     if(!base||(tool!=='pencil'&&tool!=='eraser')){bcur.style.display='none';return}
-    if(tool==='sel'){bcur.style.display='none';return}
     const p=pos(e),d=Math.max(2,brush*base.z);
     bcur.style.display='block';bcur.style.width=d+'px';bcur.style.height=d+'px';
     bcur.style.left=(p.x*base.z)+'px';bcur.style.top=(p.y*base.z)+'px';
@@ -2015,38 +3077,47 @@ function bindCanvas(cv){
   cv.addEventListener('pointerleave',()=>{bcur.style.display='none'});
 
   cv.onpointermove=e=>{if(!painting)return;const p=pos(e);
-    if(tool==='sel'&&selDrag){
+    if(isSelTool()&&selDrag){
       if(selDrag.mode==='new'){
-        const x0=Math.min(selDrag.ax,Math.floor(p.x)), y0=Math.min(selDrag.ay,Math.floor(p.y));
-        const x1=Math.max(selDrag.ax,Math.floor(p.x)), y1=Math.max(selDrag.ay,Math.floor(p.y));
-        sel={x:x0,y:y0,w:Math.max(1,x1-x0+1),h:Math.max(1,y1-y0+1)};
-      }else{
-        selDrag.dx=Math.round(p.x-selDrag.ox); selDrag.dy=Math.round(p.y-selDrag.oy);
-        sel={x:selDrag.from.x+selDrag.dx,y:selDrag.from.y+selDrag.dy,w:selDrag.from.w,h:selDrag.from.h};
+        // 올가미는 지나온 자리를 다 기억해 두었다가 닫아서 채운다
+        if(tool==='lasso')selDrag.pts.push([p.x,p.y]);
+        combineSel(shapeMask(selDrag,p),selDrag.op,selDrag.prev);
+        return;
       }
-      drawSel();updateSelLab();return;
+      if(!flt)return;
+      if(selDrag.mode==='move'){fltSet({x:Math.round(p.x-selDrag.ox),y:Math.round(p.y-selDrag.oy)});return}
+      if(selDrag.mode==='scale'){fltScale(selDrag,p,e.shiftKey);return}
+      return;
     }
+    if(tool==='brush'){brushDab(p);redraw();return}
+    if(tool==='shade'){shadeDab(p);redraw();return}
+    if(isShapeTool()&&shapeDrag){shapePrev=shapeStrokes(shapeToMask(shapeDrag.a,p,e.shiftKey));redraw();return}
     if(tool==='move'){const dx=Math.round(p.x-last.x),dy=Math.round(p.y-last.y);
       if(dx||dy){strokes.push({t:'shift',dx,dy});last=p;redraw()}return}
     stroke(p)};
   cv.onpointerup=()=>{
-    if(tool==='sel'&&selDrag){
-      // 옮기거나 복제한 건 손 뗄 때 한 번만 손질로 남긴다(끄는 내내 쌓이면 되돌리기가 지저분해진다)
-      if(selDrag.mode!=='new'&&(selDrag.dx||selDrag.dy)){
-        const f=selDrag.from;
-        push();
-        strokes.push({t:'blit',sx:f.x,sy:f.y,sw:f.w,sh:f.h,
-          dx:f.x+selDrag.dx,dy:f.y+selDrag.dy,dw:f.w,dh:f.h,
-          rot:0,fx:0,fy:0,cut:selDrag.mode==='move'?1:0});
-        redraw();
-      }
+    if(isSelTool()&&selDrag){
+      // 손을 떼도 «굽지 않는다». 조각은 계속 떠 있고, 내려놓기는 Enter·딴 도구·저장 때다.
       selDrag=null;painting=false;drawSel();updateSelLab();return;
+    }
+    if(tool==='brush'&&brushDrag){const bs=brushStroke();brushDrag=null;painting=false;
+      if(bs)pushStrokes([bs]);redraw();return}
+    if(tool==='shade'&&shade){const sh=shadeStroke();shade=null;painting=false;
+      if(sh)pushStrokes([sh]);redraw();return}
+    if(isShapeTool()&&shapeDrag){
+      const ss=shapePrev||[];shapePrev=null;shapeDrag=null;painting=false;
+      if(ss.length)pushStrokes(ss);
+      redraw();return;
     }
     painting=false;last=null};
   function stroke(p){
     const rd=v=>Math.round(v*10)/10;
-    if(tool==='eraser')strokes.push({t:'c',x:rd(p.x),y:rd(p.y),r:brush/2});
-    else strokes.push({t:'p',x:rd(p.x),y:rd(p.y),r:brush/2,color:hex2rgb(color)});
+    // 대칭이 켜져 있으면 그은 점마다 반대쪽 짝을 같이 남긴다(아세프라이트의 대칭 그리기).
+    const xs=symOn?[p.x,base.w-p.x]:[p.x];
+    for(const x of xs){
+      if(tool==='eraser')strokes.push({t:'c',x:rd(x),y:rd(p.y),r:brush/2});
+      else strokes.push({t:'p',x:rd(x),y:rd(p.y),r:brush/2,color:hex2rgb(color),dith:dithOn?1:0});
+    }
     redraw();
   }
 }

@@ -21,7 +21,7 @@
  *   node generate_skill_fx.mjs --list
  */
 
-import { mkdirSync, existsSync, createWriteStream, readdirSync } from 'fs';
+import { mkdirSync, existsSync, createWriteStream, readdirSync, writeFileSync, readFileSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -363,7 +363,7 @@ const CHARACTERS = {
   // ── 46~47 파라스 계열 — Scratch / X-Scissor ────────────────────────────
   venonat: {
     spriteId: 48, canvasSize: 128,
-    attackAction:  'venonat, small round purple bug with huge red compound eyes, at the bottom-left corner, stays fully visible in every frame, its eyes flash and it fires wobbling pink psychic rings that ripple toward the top-right corner, side view',
+    attackAction:  'venonat, round purple fuzzy bug in the bottom-left corner, it stays there the whole time, and four bright glowing pink psychic rings burst out from it one after another and fly toward the top-right corner, each ring bigger than the one before, side view',
     attackedAction:'venonat, small round purple bug with huge red compound eyes, at the top-right corner facing the viewer, stays fully visible in every frame, its eyes flash and it fires wobbling pink psychic rings that ripple toward the bottom-left corner, front view',
     hitColor: 0xE86FC4FF, hitShape: 'circle', elemental: true,
     hitDescription: 'confusion impact, a pink psychic ring collapses onto the target, the air warps and bends inward, faint pink sparks scatter, pixel art',
@@ -425,6 +425,14 @@ const CHARACTERS = {
     hitDescription: 'hydro pump impact, a heavy column of water slams into the target and explodes into white foam, spray blows outward hard, pixel art',
     hitAction: 'the water column slams in and explodes into foam, spray blows outward then falls',
   },
+  mankey: {
+    spriteId: 56, canvasSize: 128,
+    attackAction:  'mankey, small white-furred pig monkey, stays planted in the bottom-left corner the whole time, it drops low and snaps out a fast kick, a curved bright white impact arc and sharp speed lines streak toward the top-right corner, side view',
+    attackedAction:'mankey, small white-furred pig monkey, stays in the top-right corner facing the viewer the whole time, it drops low and snaps out a fast kick, a curved bright white impact arc and sharp speed lines streak toward the bottom-left corner, front view',
+    hitColor: 0xF0E6D2FF, hitShape: 'horizontal', elemental: false,
+    hitDescription: 'low kick impact, a heavy white shock arc slams across the target low, dust puffs out sideways along the ground, pixel art',
+    hitAction: 'the shock arc slams across low, dust puffs shoot sideways then settle',
+  },
   paras: {
     spriteId: 46, canvasSize: 128,
     attackAction:  'paras, small orange mushroom crab, sits at the bottom-left corner and stays fully visible in every frame, it swipes both front claws upward-right, leaving three bright white glowing claw streaks that fly toward the top-right corner, side view',
@@ -435,7 +443,7 @@ const CHARACTERS = {
   },
   parasect: {
     spriteId: 47, canvasSize: 128,
-    attackAction:  'parasect, orange crab under a wide red mushroom cap, at the bottom-left corner, stays fully visible in every frame, it crosses both claws and rips them apart, two bright green energy blades cross into a glowing X flying toward the top-right corner, side view',
+    attackAction:  'parasect, orange crab under a red mushroom cap, stays in the bottom-left corner the whole time, it swings both claws and a huge bright green glowing X of two crossed energy blades cuts through the empty air toward the top-right corner, well away from its body, side view',
     attackedAction:'parasect, orange crab under a wide red mushroom cap, at the top-right corner facing the viewer, stays fully visible in every frame, it crosses both claws and rips them apart, two bright green energy blades cross into a glowing X flying toward the bottom-left corner, front view',
     hitColor: 0x63C64DFF, hitShape: 'cross', elemental: true,
     hitDescription: 'x-scissor impact, two bright green energy blades cross in an X over the target, the crossing point flashes white, green shards fly along both blade lines, pixel art',
@@ -911,6 +919,30 @@ async function animateFree(description, action, hitColor, hitShape = 'circle') {
 const SINGLE = 'exactly one character, never duplicated.';
 const BEHIND = ' seen strictly from behind, its face never visible, it never turns around.';
 
+/**
+ * API 가 준 낱장을 **굽기 전에** 그대로 남긴다.
+ *
+ * 이 값은 크레딧을 이미 쓴 결과다. 그런데 gif 로 굽는 뒷단(배경 지우기·구멍 메우기·
+ * 인코딩)에서 터지면 그 값이 통째로 사라지고, 다시 부르려면 또 20장을 낸다.
+ * 2026-08-25 망키 앞모습이 정확히 그렇게 40장을 태우고 파일 하나 없이 끝났다.
+ *
+ *   node scripts/generate_skill_fx.mjs mankey --step attacked --from-raw
+ *   → API 를 안 부르고 남겨 둔 낱장으로 gif 만 다시 굽는다
+ */
+function saveRaw(name, kind, base64, results) {
+  try {
+    const dir = join(OUTPUT_DIR, name, '_raw');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, kind + '.json'), JSON.stringify({ base64, results }));
+    console.log('  원본 낱장을 _raw/' + kind + '.json 에 남겼습니다');
+  } catch (e) { console.log('  ⚠ 원본 낱장 저장 실패: ' + e.message); }
+}
+function loadRaw(name, kind) {
+  const p = join(OUTPUT_DIR, name, '_raw', kind + '.json');
+  if (!existsSync(p)) return null;
+  return JSON.parse(readFileSync(p, 'utf8'));
+}
+
 async function stepAttack(name, cfg, count = 1) {
   console.log(`  [1/3] attack-fx.gif (NE) ×${count}...`);
   const { base64, w, h } = await padSprite(cfg.spriteId, cfg.canvasSize, 'bottom-left');
@@ -919,9 +951,11 @@ async function stepAttack(name, cfg, count = 1) {
   // a single character (v2 likes to clone the sprite across an empty canvas). Prepended so the
   // 500-char guard never trims these anchors.
   const action = `${SINGLE}${BEHIND} ${cfg.attackAction}`;
-  const results = await Promise.all(
+  const cached = FROM_RAW ? loadRaw(name, 'attack') : null;
+  const results = cached ? cached.results : await Promise.all(
     Array.from({ length: count }, () => animateV2(base64, w, h, action, 'north-east', 'side'))
   );
+  if (!cached) saveRaw(name, 'attack', base64, results);
   for (const frames of results) {
     // Force the animation to START from the exact reference sprite (never a redrawn character):
     // prepend the padded reference as frame 0.
@@ -933,9 +967,11 @@ async function stepAttacked(name, cfg, count = 1) {
   console.log(`  [2/3] attacked-fx.gif (SW, front sprite) ×${count}...`);
   const { base64, w, h } = await padSprite(cfg.spriteId, cfg.canvasSize, 'top-right');
   const action = `${SINGLE} ${cfg.attackedAction}`;
-  const results = await Promise.all(
+  const cached = FROM_RAW ? loadRaw(name, 'attacked') : null;
+  const results = cached ? cached.results : await Promise.all(
     Array.from({ length: count }, () => animateV2(base64, w, h, action, 'south-west', 'side'))
   );
+  if (!cached) saveRaw(name, 'attacked', base64, results);
   for (const frames of results) {
     // Start from the exact reference sprite: prepend the padded reference as frame 0.
     await framesToGif([base64, ...frames], join(OUTPUT_DIR, name, 'attacked-fx.gif'), 4, false, true);
@@ -979,6 +1015,7 @@ if (args.includes('--list')) {
 
 if (!API_KEY) { console.error('Error: PIXELLAB_API_KEY not set'); process.exit(1); }
 
+const FROM_RAW = args.includes('--from-raw');   // API 를 안 부르고 남겨 둔 낱장으로 다시 굽는다
 const stepArg  = args.includes('--step')  ? args[args.indexOf('--step')  + 1] : null;
 const countArg = args.includes('--count') ? parseInt(args[args.indexOf('--count') + 1], 10) : 1;
 

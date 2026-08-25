@@ -17,3 +17,6 @@ scripts/downloads/
 scripts/.pixellab.key
 
 # 편집기가 덮어쓰기 전에 남기는 로컬 백업. git 이력이 이미 백업이라 올릴 필요가 없다.
+
+# 크레딧 복구용 원본 낱장 — 무겁고 저장소에 올릴 값이 아니다
+skillFX/*/_raw/

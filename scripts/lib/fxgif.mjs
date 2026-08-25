@@ -166,6 +166,52 @@ export function applyEdits(px, w, h, edits) {
         if (y > 0 && !seen[p - w]) { seen[p - w] = 1; stack.push(p - w); }
         if (y < h - 1 && !seen[p + w]) { seen[p + w] = 1; stack.push(p + w); }
       }
+    } else if (st.t === 'blit') {
+      // 고른 사각형을 떠서 돌리고·크기를 바꿔 다른 자리에 놓는다.
+      //   sx,sy,sw,sh  떠 올 자리        dx,dy,dw,dh  놓을 자리(크기까지)
+      //   rot 0/90/180/270 (시계 방향)   fx,fy 좌우·위아래 뒤집기   cut 1이면 떠 온 자리는 비운다
+      // 픽셀아트라 «가장 가까운 점» 으로만 늘린다(부드럽게 섞으면 도트가 뭉갠다).
+      // 투명한 점은 안 그린다 — 붙인 조각이 바탕을 지우면 안 되기 때문이다.
+      const sx = Math.round(st.sx), sy = Math.round(st.sy);
+      const sw = Math.max(1, Math.round(st.sw)), sh = Math.max(1, Math.round(st.sh));
+      const dw = Math.max(1, Math.round(st.dw ?? sw)), dh = Math.max(1, Math.round(st.dh ?? sh));
+      const dx = Math.round(st.dx), dy = Math.round(st.dy);
+      const rot = ((Math.round((st.rot || 0) / 90) * 90) % 360 + 360) % 360;
+
+      const cut = new Uint8Array(sw * sh * 4);
+      for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+        const gx = sx + x, gy = sy + y;
+        if (gx < 0 || gy < 0 || gx >= w || gy >= h) continue;
+        const a = (gy * w + gx) * 4, b = (y * sw + x) * 4;
+        cut[b] = px[a]; cut[b + 1] = px[a + 1]; cut[b + 2] = px[a + 2]; cut[b + 3] = px[a + 3];
+      }
+      if (st.cut) {
+        for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+          const gx = sx + x, gy = sy + y;
+          if (gx < 0 || gy < 0 || gx >= w || gy >= h) continue;
+          px[(gy * w + gx) * 4 + 3] = 0;
+        }
+      }
+      const rw = (rot === 90 || rot === 270) ? sh : sw;
+      const rh = (rot === 90 || rot === 270) ? sw : sh;
+      for (let oy = 0; oy < dh; oy++) for (let ox = 0; ox < dw; ox++) {
+        const rx = Math.min(rw - 1, Math.floor(ox * rw / dw));
+        const ry = Math.min(rh - 1, Math.floor(oy * rh / dh));
+        let u, v;
+        if (rot === 0) { u = rx; v = ry; }
+        else if (rot === 90) { u = ry; v = rh - 1 - rx; }
+        else if (rot === 180) { u = rw - 1 - rx; v = rh - 1 - ry; }
+        else { u = rw - 1 - ry; v = rx; }
+        if (st.fx) u = sw - 1 - u;
+        if (st.fy) v = sh - 1 - v;
+        if (u < 0 || v < 0 || u >= sw || v >= sh) continue;
+        const b = (v * sw + u) * 4;
+        if (cut[b + 3] === 0) continue;
+        const gx = dx + ox, gy = dy + oy;
+        if (gx < 0 || gy < 0 || gx >= w || gy >= h) continue;
+        const a = (gy * w + gx) * 4;
+        px[a] = cut[b]; px[a + 1] = cut[b + 1]; px[a + 2] = cut[b + 2]; px[a + 3] = cut[b + 3];
+      }
     } else if (st.t === 'shift') {
       // 낱장 전체를 몇 칸 옮긴다. 한 장만 어긋나 있을 때 쓴다.
       const out = new Uint8Array(px.length);

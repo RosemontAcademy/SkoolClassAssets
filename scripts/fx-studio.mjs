@@ -1402,6 +1402,12 @@ function play(){
 async function save(){
   commitStrokes();          // 그리다 만 붓질도 저장에 담는다 — 「적용」을 잊어도 잃지 않게
   stampUids();
+  // 무슨 일이 일어났는지 «누른 자리에서» 보여야 한다. 알림을 화면 맨 아래에만 붙이면
+  // 스크롤 밖이라 못 본다(2026-08-25 원장님: "저장 누르면 뭐가 됐는지 알 수가 없다").
+  const sv=[...document.querySelectorAll('#bar button')].find(b=>b.textContent==='저장');
+  const svOld=sv?sv.textContent:'';
+  if(sv){sv.disabled=true;sv.textContent='저장 중…'}
+  toast('저장하는 중…');
   const steps=seq.map(s=>({src:s.src,i:s.i,erase:slotEdits(s),
     over:(s.over||[]).map(L=>({dir:L.dir,kind:L.kind,src:L.src,i:L.i,dx:L.dx|0,dy:L.dy|0,
       blend:L.blend||'normal',op:L.op===undefined?1:L.op,
@@ -1412,6 +1418,8 @@ async function save(){
   const m=el('div','msg '+(j.ok?'ok':'err'));
   m.innerHTML=j.ok?'저장했습니다 — '+j.frames+'장 · 한 바퀴 '+j.loop_ms+'ms<br>옛 판은 재료 줄에 「저장본」 으로 남습니다. 아이들 화면까지는 아래 줄이 알아서 보냅니다.':'실패: '+j.error;
   beat();
+  if(sv){sv.disabled=false;sv.textContent=svOld}
+  toast(j.ok?('저장했습니다 — '+j.frames+'장 · 한 바퀴 '+j.loop_ms+'ms'):('저장 실패 — '+(j.error||'')),j.ok?'ok':'err');
   $('#work').appendChild(m);m.scrollIntoView({behavior:'smooth',block:'nearest'});
   if(j.ok){const n=document.querySelector('.it.on');if(n&&!n.querySelector('.done')){const d=el('span','done');d.textContent='●';n.appendChild(d)}}
 }
@@ -1422,14 +1430,15 @@ async function save(){
  * (리자몽이 실제로 그렇게 하루를 넘겼다).
  */
 /** 한쪽 구석에 잠깐 뜨는 쪽지. 화면을 다시 그리지 않고 알려 줘야 할 때 쓴다. */
-function toast(text){
+function toast(text,tone){
   const old=document.getElementById('toast');if(old)old.remove();
   const t=el('div');t.id='toast';t.textContent=text;
+  const line=tone==='err'?'var(--drop)':(tone==='ok'?'var(--accent)':'var(--line)');
   t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:200;'
-    +'background:var(--surface);border:1px solid var(--accent);color:var(--ink);'
-    +'padding:8px 14px;border-radius:10px;font-size:13px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.35)';
+    +'background:var(--surface);border:2px solid '+line+';color:var(--ink);'
+    +'padding:10px 18px;border-radius:12px;font-size:14px;font-weight:700;box-shadow:0 10px 30px rgba(0,0,0,.4)';
   document.body.appendChild(t);
-  setTimeout(()=>{t.remove()},1800);
+  setTimeout(()=>{t.remove()},tone==='err'?6000:2600);
 }
 function pubBar(){
   setTimeout(beat,0);
@@ -1487,8 +1496,18 @@ addEventListener('keydown',e=>{
   if(k==='c'){
     // 글자를 고르고 있으면 그건 진짜 복사다 — 뺏지 않는다.
     if(String(getSelection()||'').length) return;
+    if(openEd&&sel){ e.preventDefault(); selClip=Object.assign({},sel); toast('고른 곳을 복사했습니다 — Ctrl+V 로 붙입니다'); return; }
     if(selSlot!==null&&seq[selSlot]){ e.preventDefault(); clip=copySlot(seq[selSlot]); toast('칸을 복사했습니다 — Ctrl+V 로 붙입니다'); }
     else if(openEd){ e.preventDefault(); clip={src:openEd.src,i:openEd.i,over:[]}; toast('이 낱장을 복사했습니다 — Ctrl+V 로 붙입니다'); }
+    return;
+  }
+  if(k==='v'&&openEd&&selClip){
+    e.preventDefault();push();
+    const off=Math.max(2,Math.round(Math.min(selClip.w,selClip.h)*0.15));
+    strokes.push({t:'blit',sx:selClip.x,sy:selClip.y,sw:selClip.w,sh:selClip.h,
+      dx:selClip.x+off,dy:selClip.y+off,dw:selClip.w,dh:selClip.h,rot:0,fx:0,fy:0,cut:0});
+    sel={x:selClip.x+off,y:selClip.y+off,w:selClip.w,h:selClip.h};
+    redraw();drawSel();updateSelLab();toast('붙였습니다 — 끌어서 자리를 잡으세요');
     return;
   }
   if(k==='v'){
@@ -1529,6 +1548,34 @@ addEventListener('keyup',e=>{
 // 그림 칸과 도구 칸이 한 줄에 안 들어가면 도구가 그림 «아래» 로 접혀서, 8배만 넘겨도
 // 도구가 화면 밖(실측 y=1648, 창 높이 905)으로 사라졌다. 「창으로」 는 남겨 둔다.
 let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[],edZoom=0,edFull=true,mountedKey=null,spaceDown=false;
+// 「선택」 으로 고른 사각형(그림 좌표). 고른 게 없으면 null.
+let sel=null;
+// 복사해 둔 조각의 자리. 붙이면 그 자리에서 조금 옮겨 놓는다.
+let selClip=null;
+/** 고른 사각형을 화면에 점선으로 그린다. 캔버스에 그리면 손질로 구워지므로 겹쳐 둔 칸으로 그린다. */
+function updateSelLab(){
+  const l=document.getElementById('sellab');
+  if(l)l.textContent=sel?('고른 곳 '+sel.w+'×'+sel.h):'고른 곳 없음';
+  document.querySelectorAll('#selrow button').forEach(b=>{b.disabled=!sel});
+}
+function drawSel(){
+  const box=document.querySelector('.selbox');
+  if(!sel||!base){if(box)box.remove();return}
+  const b=box||el('div','selbox');
+  b.style.cssText='position:absolute;pointer-events:none;z-index:6;'
+    +'outline:1px dashed #fff;box-shadow:0 0 0 1px rgba(0,0,0,.7);'
+    +'left:'+(sel.x*base.z)+'px;top:'+(sel.y*base.z)+'px;'
+    +'width:'+(sel.w*base.z)+'px;height:'+(sel.h*base.z)+'px';
+  if(!box){const cv=document.getElementById('cv');if(cv)cv.parentNode.appendChild(b)}
+}
+/** 고른 조각에 손질 하나를 얹고 다시 그린다. */
+function selApply(o){
+  if(!sel)return;
+  push();
+  strokes.push(Object.assign({t:'blit',sx:sel.x,sy:sel.y,sw:sel.w,sh:sel.h,
+    dx:sel.x,dy:sel.y,dw:sel.w,dh:sel.h,rot:0,fx:0,fy:0,cut:1},o));
+  redraw();
+}
 /**
  * 그리던 붓질을 «편집기를 벗어나는 순간» 그 자리에서 적용한다.
  *
@@ -1580,12 +1627,50 @@ function editor(){
   // 도구를 바꿀 때마다 render() 를 부르면 편집기가 통째로 다시 만들어지고
   // 캔버스가 새로 붙느라 화면이 깜빡인다. 단추 상태만 갈아끼운다.
   const toolBtns=[];
-  [['pencil','연필'],['eraser','지우개'],['picker','스포이드'],['bucket','페인트통'],['swap','색바꾸기'],['move','이동']]
+  [['pencil','연필'],['eraser','지우개'],['picker','스포이드'],['bucket','페인트통'],['swap','색바꾸기'],['move','이동'],['sel','선택']]
     .forEach(([id,n])=>{const x=el('button');x.textContent=n;x.dataset.tool=id;
       x.setAttribute('aria-pressed',String(tool===id));
       x.onclick=()=>setTool(id);
       toolBtns.push(x);tg.appendChild(x)});
   T.appendChild(tg);
+
+  // 고른 조각을 다루는 단추들. 고른 게 없으면 흐리게 둔다.
+  const selRow=el('div','cur');selRow.id='selrow';selRow.style.flexWrap='wrap';
+  const sLab=el('span');sLab.className='mono';sLab.id='sellab';sLab.textContent='고른 곳 없음';
+  selRow.appendChild(sLab);
+  const selBtn=(t,title,fn)=>{const x=el('button');x.textContent=t;x.title=title;
+    x.onclick=()=>{if(!sel)return;fn();drawSel();updateSelLab()};selRow.appendChild(x);return x};
+  selBtn('⟳','시계 방향으로 90도 돌리기',()=>{
+    // 가운데를 붙잡고 돈다 — 가로세로가 뒤바뀌므로 자리도 그만큼 옮긴다
+    const cx=sel.x+sel.w/2, cy=sel.y+sel.h/2;
+    const nw=sel.h, nh=sel.w;
+    const nx=Math.round(cx-nw/2), ny=Math.round(cy-nh/2);
+    selApply({dx:nx,dy:ny,dw:nw,dh:nh,rot:90});
+    sel={x:nx,y:ny,w:nw,h:nh};
+  });
+  selBtn('↔','좌우 뒤집기',()=>selApply({fx:1}));
+  selBtn('↕','위아래 뒤집기',()=>selApply({fy:1}));
+  selBtn('＋','10% 크게 (가운데 기준)',()=>{
+    const nw=Math.max(1,Math.round(sel.w*1.1)), nh=Math.max(1,Math.round(sel.h*1.1));
+    const nx=Math.round(sel.x+sel.w/2-nw/2), ny=Math.round(sel.y+sel.h/2-nh/2);
+    selApply({dx:nx,dy:ny,dw:nw,dh:nh});
+    sel={x:nx,y:ny,w:nw,h:nh};
+  });
+  selBtn('－','10% 작게 (가운데 기준)',()=>{
+    const nw=Math.max(1,Math.round(sel.w*0.9)), nh=Math.max(1,Math.round(sel.h*0.9));
+    const nx=Math.round(sel.x+sel.w/2-nw/2), ny=Math.round(sel.y+sel.h/2-nh/2);
+    selApply({dx:nx,dy:ny,dw:nw,dh:nh});
+    sel={x:nx,y:ny,w:nw,h:nh};
+  });
+  selBtn('지우기','고른 곳을 비웁니다',()=>{
+    push();strokes.push({t:'r',x:sel.x,y:sel.y,w:sel.w,h:sel.h});redraw();
+  });
+  selBtn('해제','고르기를 풉니다',()=>{sel=null});
+  T.appendChild(selRow);
+  const selHint=el('div');selHint.className='cap';selHint.style.textAlign='left';
+  selHint.innerHTML='<b>선택</b> 도구로 사각형을 그으세요 · 그 안을 <b>끌면 옮기고</b>, '
+    +'<b>Alt+끌면 복제</b> · <b>Ctrl+C</b> 복사 <b>Ctrl+V</b> 붙이기';
+  T.appendChild(selHint);
 
   const cur=el('div','cur');const box=el('div','box');box.style.background=color;
   const ci=el('input');ci.type='color';ci.value=color;ci.oninput=e=>{color=e.target.value;box.style.background=color};
@@ -1636,7 +1721,7 @@ function editor(){
   T.appendChild(hint);
   main.appendChild(T);wrap.appendChild(main);
 
-  setTimeout(()=>mount(cv,on,gr,pw),0);
+  setTimeout(()=>{mount(cv,on,gr,pw);drawSel();updateSelLab()},0);
   return wrap;
 }
 /** 도구 바꾸기 — 단추와 단축키가 같은 자리를 쓴다. render() 를 부르면 캔버스가
@@ -1705,7 +1790,7 @@ function mount(cv,on,gr,pw){
     // 여기서 무조건 저장본을 다시 읽으면 아직 '적용' 안 한 작업이 조용히 사라진다.
     // 칸에 제 손질이 없으면 재료 낱장 손질에서 «베껴» 시작한다 — 여기서부터 갈라진다.
     const k=openEd.key;
-    if(mountedKey!==k){ strokes=(edits[k]||edits[K(openEd.src,openEd.i)]||[]).slice(); mountedKey=k; }
+    if(mountedKey!==k){ strokes=(edits[k]||edits[K(openEd.src,openEd.i)]||[]).slice(); mountedKey=k; sel=null; }
     redraw();drawOnion(on);buildPal(pw);
     bindCanvas(cv);
   };
@@ -1732,7 +1817,7 @@ function applyOne(c,s,W,H){
   if(s.t==='c'){c.save();c.globalCompositeOperation='destination-out';c.beginPath();c.arc(s.x,s.y,s.r,0,7);c.fill();c.restore()}
   else if(s.t==='r'){c.save();c.globalCompositeOperation='destination-out';c.fillRect(s.x,s.y,s.w,s.h);c.restore()}
   else if(s.t==='p'){c.fillStyle='rgb('+s.color.join(',')+')';c.beginPath();c.arc(s.x,s.y,s.r,0,7);c.fill()}
-  else if(s.t==='swap'||s.t==='fill'||s.t==='shift'){pixelOp(c,s,w,h)}
+  else if(s.t==='swap'||s.t==='fill'||s.t==='shift'||s.t==='blit'){pixelOp(c,s,w,h)}
 }
 function pixelOp(c,s,W,H){
   const w=W||base.w,h=H||base.h;
@@ -1751,6 +1836,43 @@ function pixelOp(c,s,W,H){
       const x=p%w,y=(p/w)|0;
       if(x>0&&!seen[p-1]){seen[p-1]=1;st.push(p-1)}if(x<w-1&&!seen[p+1]){seen[p+1]=1;st.push(p+1)}
       if(y>0&&!seen[p-w]){seen[p-w]=1;st.push(p-w)}if(y<h-1&&!seen[p+w]){seen[p+w]=1;st.push(p+w)}}}
+  else if(s.t==='blit'){
+    // 고른 사각형을 떠서 돌리고·크기를 바꿔 다른 자리에 놓는다.
+    //   sx,sy,sw,sh  떠 올 자리        dx,dy,dw,dh  놓을 자리(크기까지)
+    //   rot 0/90/180/270 (시계 방향)   fx,fy 좌우·위아래 뒤집기   cut 1이면 떠 온 자리는 비운다
+    // 픽셀아트라 «가장 가까운 점» 으로만 늘린다(부드럽게 섞으면 도트가 뭉갠다).
+    // 투명한 점은 안 그린다 — 붙인 조각이 바탕을 지우면 안 되기 때문이다.
+    const sx=Math.round(s.sx),sy=Math.round(s.sy);
+    const sw=Math.max(1,Math.round(s.sw)),sh=Math.max(1,Math.round(s.sh));
+    const dw=Math.max(1,Math.round(s.dw??sw)),dh=Math.max(1,Math.round(s.dh??sh));
+    const dx=Math.round(s.dx),dy=Math.round(s.dy);
+    const rot=((Math.round((s.rot||0)/90)*90)%360+360)%360;
+    const cut=new Uint8Array(sw*sh*4);
+    for(let y=0;y<sh;y++)for(let x=0;x<sw;x++){
+      const gx=sx+x,gy=sy+y; if(gx<0||gy<0||gx>=w||gy>=h)continue;
+      const a=(gy*w+gx)*4,b=(y*sw+x)*4;
+      cut[b]=px[a];cut[b+1]=px[a+1];cut[b+2]=px[a+2];cut[b+3]=px[a+3];
+    }
+    if(s.cut){for(let y=0;y<sh;y++)for(let x=0;x<sw;x++){
+      const gx=sx+x,gy=sy+y; if(gx<0||gy<0||gx>=w||gy>=h)continue;
+      px[(gy*w+gx)*4+3]=0}}
+    const rw=(rot===90||rot===270)?sh:sw, rh=(rot===90||rot===270)?sw:sh;
+    for(let oy=0;oy<dh;oy++)for(let ox=0;ox<dw;ox++){
+      const rx=Math.min(rw-1,Math.floor(ox*rw/dw)), ry=Math.min(rh-1,Math.floor(oy*rh/dh));
+      let u,v;
+      if(rot===0){u=rx;v=ry}
+      else if(rot===90){u=ry;v=rh-1-rx}
+      else if(rot===180){u=rw-1-rx;v=rh-1-ry}
+      else{u=rw-1-ry;v=rx}
+      if(s.fx)u=sw-1-u;
+      if(s.fy)v=sh-1-v;
+      if(u<0||v<0||u>=sw||v>=sh)continue;
+      const b=(v*sw+u)*4; if(cut[b+3]===0)continue;
+      const gx=dx+ox,gy=dy+oy; if(gx<0||gy<0||gx>=w||gy>=h)continue;
+      const a=(gy*w+gx)*4;
+      px[a]=cut[b];px[a+1]=cut[b+1];px[a+2]=cut[b+2];px[a+3]=cut[b+3];
+    }
+  }
   else if(s.t==='shift'){const out=new Uint8ClampedArray(px.length);
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){const sx=x-s.dx,sy=y-s.dy;if(sx<0||sy<0||sx>=w||sy>=h)continue;
       const a=(sy*w+sx)*4,b=(y*w+x)*4;out[b]=px[a];out[b+1]=px[a+1];out[b+2]=px[a+2];out[b+3]=px[a+3]}
@@ -1806,6 +1928,10 @@ function bindCanvas(cv){
   addEventListener('pointerup',stopPan);
   addEventListener('pointercancel',stopPan);
 
+  // 「선택」 도구 — 사각형을 긋고, 그 안을 끌면 조각이 따라온다.
+  let selDrag=null;
+  const inSel=p=>sel&&p.x>=sel.x&&p.y>=sel.y&&p.x<sel.x+sel.w&&p.y<sel.y+sel.h;
+
   cv.onpointerdown=e=>{
     if((spaceDown||e.button===1)&&scBox){          // 밀기가 그리기보다 먼저다
       e.preventDefault();cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing';
@@ -1813,6 +1939,11 @@ function bindCanvas(cv){
     }
     if(e.button!==0)return;                        // 오른쪽·가운데 버튼으로는 안 그린다
     cv.setPointerCapture(e.pointerId);const p=pos(e);
+    if(tool==='sel'){
+      if(inSel(p)){ selDrag={mode:e.altKey?'copy':'move',from:Object.assign({},sel),ox:p.x,oy:p.y,dx:0,dy:0}; }
+      else { selDrag={mode:'new',ax:Math.floor(p.x),ay:Math.floor(p.y)}; sel={x:Math.floor(p.x),y:Math.floor(p.y),w:1,h:1}; drawSel(); updateSelLab(); }
+      painting=true;return;
+    }
     if(tool==='picker'){const c=ctxOf();const d=c.getImageData(Math.floor(p.x),Math.floor(p.y),1,1).data;
       color='#'+[d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,'0')).join('');
       setColor(color);return}   // 색만 집는 것은 그림을 안 바꾸니 역사에 안 남긴다
@@ -1830,6 +1961,7 @@ function bindCanvas(cv){
   cv.parentNode.appendChild(bcur);
   const moveBrushCur=e=>{
     if(!base||(tool!=='pencil'&&tool!=='eraser')){bcur.style.display='none';return}
+    if(tool==='sel'){bcur.style.display='none';return}
     const p=pos(e),d=Math.max(2,brush*base.z);
     bcur.style.display='block';bcur.style.width=d+'px';bcur.style.height=d+'px';
     bcur.style.left=(p.x*base.z)+'px';bcur.style.top=(p.y*base.z)+'px';
@@ -1838,10 +1970,34 @@ function bindCanvas(cv){
   cv.addEventListener('pointerleave',()=>{bcur.style.display='none'});
 
   cv.onpointermove=e=>{if(!painting)return;const p=pos(e);
+    if(tool==='sel'&&selDrag){
+      if(selDrag.mode==='new'){
+        const x0=Math.min(selDrag.ax,Math.floor(p.x)), y0=Math.min(selDrag.ay,Math.floor(p.y));
+        const x1=Math.max(selDrag.ax,Math.floor(p.x)), y1=Math.max(selDrag.ay,Math.floor(p.y));
+        sel={x:x0,y:y0,w:Math.max(1,x1-x0+1),h:Math.max(1,y1-y0+1)};
+      }else{
+        selDrag.dx=Math.round(p.x-selDrag.ox); selDrag.dy=Math.round(p.y-selDrag.oy);
+        sel={x:selDrag.from.x+selDrag.dx,y:selDrag.from.y+selDrag.dy,w:selDrag.from.w,h:selDrag.from.h};
+      }
+      drawSel();updateSelLab();return;
+    }
     if(tool==='move'){const dx=Math.round(p.x-last.x),dy=Math.round(p.y-last.y);
       if(dx||dy){strokes.push({t:'shift',dx,dy});last=p;redraw()}return}
     stroke(p)};
-  cv.onpointerup=()=>{painting=false;last=null};
+  cv.onpointerup=()=>{
+    if(tool==='sel'&&selDrag){
+      // 옮기거나 복제한 건 손 뗄 때 한 번만 손질로 남긴다(끄는 내내 쌓이면 되돌리기가 지저분해진다)
+      if(selDrag.mode!=='new'&&(selDrag.dx||selDrag.dy)){
+        const f=selDrag.from;
+        push();
+        strokes.push({t:'blit',sx:f.x,sy:f.y,sw:f.w,sh:f.h,
+          dx:f.x+selDrag.dx,dy:f.y+selDrag.dy,dw:f.w,dh:f.h,
+          rot:0,fx:0,fy:0,cut:selDrag.mode==='move'?1:0});
+        redraw();
+      }
+      selDrag=null;painting=false;drawSel();updateSelLab();return;
+    }
+    painting=false;last=null};
   function stroke(p){
     const rd=v=>Math.round(v*10)/10;
     if(tool==='eraser')strokes.push({t:'c',x:rd(p.x),y:rd(p.y),r:brush/2});

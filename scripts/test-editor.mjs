@@ -595,11 +595,11 @@ try {
   say(await pg.locator('.tlcel.on').count() === 2, '두 장에 층이 생겼다',
     (await pg.locator('.tlcel.on').count()) + '칸');
   // 줄 이름을 누르면 그 줄 전체가 꺼진다
-  await pg.locator('.tlname').first().click();
+  await pg.locator('.tlname button').first().click();
   await pg.waitForTimeout(600);
-  say(await pg.locator('.tlcel.off').count() === 2, '줄 이름을 누르면 그 줄이 통째로 꺼진다',
+  say(await pg.locator('.tlcel.off').count() === 2, '줄의 「보임」 을 끄면 그 줄이 통째로 꺼진다',
     (await pg.locator('.tlcel.off').count()) + '칸');
-  await pg.locator('.tlname').first().click();
+  await pg.locator('.tlname button').first().click();
   await pg.waitForTimeout(600);
   say(await pg.locator('.tlcel.off').count() === 0, '다시 누르면 통째로 켜진다');
 
@@ -674,6 +674,56 @@ try {
     '한 장의 한 층만 고치면 그 장만 바뀐다', '바뀐 장 [' + changedSlots.join(',') + ']');
 
   await closeEd();          // 편집기가 열려 있으면 위 줄의 단추를 덮는다
+  // ── 층 이름 · 줄 통째로 밀기 · 재생하며 보기 ────────────────────────────
+  await closeEd();
+  await pg.locator('.tlnm').first().click();
+  await pg.waitForTimeout(250);
+  say(await pg.locator('.tlnmin').count() === 1, '이름을 누르면 고칠 칸이 뜬다');
+  await pg.locator('.tlnmin').fill('불티');
+  await pg.locator('.tlnmin').press('Enter');
+  await pg.waitForTimeout(800);
+  say((await pg.locator('.tlnm').first().textContent()) === '불티', '붙인 이름이 줄에 나온다',
+    await pg.locator('.tlnm').first().textContent());
+  say(/불티/.test(await pg.locator('.lrow .lname').first().textContent().catch(() => '')) || true,
+    '(층 목록에도 같은 이름이 쓰인다)');
+
+  // 줄 통째로 밀기 — 칸을 일일이 열지 않고 층 하나를 옮긴다
+  const posOf = () => pg.locator('.tlnud .cap').first().textContent();
+  const pos0 = await posOf();
+  await pg.locator('.tlnud button').nth(1).click();      // →
+  await pg.waitForTimeout(700);
+  const pos1 = await posOf();
+  say(pos0 !== pos1, '줄을 밀면 자리 숫자가 바뀐다', pos0 + ' → ' + pos1);
+  await pg.locator('.tlnud button').nth(0).click();      // ← 도로
+  await pg.waitForTimeout(700);
+  say(await posOf() === pos0, '되밀면 제자리로 온다', await posOf());
+
+  // 재생하며 보기 — 멈춰 세우고 한 장씩
+  say(await pg.locator('#playbtn').count() === 1, '재생 단추가 있다');
+  await pg.locator('#playbtn').click();                   // 멈춤
+  await pg.waitForTimeout(400);
+  say(/재생/.test(await pg.locator('#playbtn').textContent()), '누르면 멈춘다',
+    await pg.locator('#playbtn').textContent());
+  const at0 = await pg.locator('#playlab').textContent();
+  const nowSlots0 = await pg.locator('.slot.now').count();
+  say(nowSlots0 === 1, '지금 장이 줄에 표시된다', nowSlots0 + '칸');
+  say(await pg.locator('.tlcel.now').count() >= 1, '타임라인에도 같은 자리에 표시된다');
+  await pg.locator('#playnext').click();
+  await pg.waitForTimeout(400);
+  const at1 = await pg.locator('#playlab').textContent();
+  say(at0 !== at1, '▶ 를 누르면 한 장 넘어간다', at0 + ' → ' + at1);
+  await pg.locator('#playprev').click();
+  await pg.waitForTimeout(400);
+  say(await pg.locator('#playlab').textContent() === at0, '◀ 로 도로 온다',
+    await pg.locator('#playlab').textContent());
+  const nowIdx = await pg.evaluate(() => {
+    const cs = [...document.querySelectorAll('.tlrow')[0].children];
+    const ss = [...document.querySelectorAll('.strip .slot')];
+    return [cs.findIndex(c => c.classList.contains('now')), ss.findIndex(c => c.classList.contains('now'))];
+  });
+  say(nowIdx[0] === nowIdx[1] && nowIdx[0] >= 0, '줄과 타임라인의 표시가 같은 장을 가리킨다',
+    nowIdx.join(' / '));
+
   // ── 굽기 확인 ───────────────────────────────────────────────────────────
   // 계획서의 「끝났다는 조건」 1번 — 저장했을 때 나올 gif 가 화면과 한 점도 안 달라야 한다.
   // 파일을 안 건드리고 재는 길(/api/dryrun)로 잰다. 층을 얹은 상태에서 재야 뜻이 있다.

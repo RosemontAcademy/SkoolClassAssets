@@ -734,9 +734,18 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .tl{display:flex;flex-direction:column;gap:2px;margin-top:6px;width:100%;overflow-x:auto}
   .tlrow{display:flex;gap:6px;align-items:center}
   /* 줄 이름은 칸 «위» 에 얹는다 — 앞에 두면 칸이 위 줄과 어긋나 세로로 안 읽힌다 */
-  .tlname{align-self:flex-start;font-size:11px;font-weight:700;cursor:pointer;margin-top:4px;
-    white-space:nowrap;padding:1px 7px;border-radius:5px;
+  .tlname{align-self:flex-start;display:flex;align-items:center;gap:6px;font-size:11px;
+    font-weight:700;margin-top:4px;white-space:nowrap;padding:1px 7px;border-radius:5px;
     background:color-mix(in srgb,var(--accent) 14%,transparent)}
+  .tlname button{padding:1px 6px;font-size:10px;border-radius:5px}
+  .tlnm{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+  /* 눌러 고치는 칸은 이름만큼 넉넉해야 한다 — 좁으면 지우고 다시 쓰게 된다 */
+  .tlnmin{font-size:11px;font-weight:700;padding:1px 6px;border-radius:5px;min-width:140px;
+    border:1px solid var(--accent);background:var(--cell);color:var(--ink)}
+  .tlnud{display:flex;align-items:center;gap:2px}
+  /* 지금 도는 장 — 줄과 타임라인에 같이 표시한다 */
+  .slot.now{box-shadow:0 0 0 3px #ffd34d}
+  .tlcel.now{box-shadow:0 0 0 2px #ffd34d}
   .tlcel{flex:0 0 auto;width:calc(66px * var(--z,1) + 10px);height:22px;border:1px solid var(--line);border-radius:5px;
     background:var(--cell);cursor:pointer;display:flex;align-items:center;justify-content:center;
     font-size:11px;font-weight:700;color:color-mix(in srgb,var(--ink) 55%,transparent)}
@@ -835,7 +844,8 @@ const layURL=L=>isBlank(L)
   : isForeign(L)
   ? '/frame.png?dir='+encodeURIComponent(L.dir)+'&kind='+L.kind+'&src='+L.src+'&i='+L.i
   : furl(L.src,L.i);
-const layName=L=>isBlank(L)
+const layName=L=>(L&&L.name)?L.name
+  :isBlank(L)
   ? ('그린 층'+(L.lid?(' '+String(L.lid).slice(-2)):''))
   : ((isForeign(L)?(L.dir.replace(/^\\d+-/,'')+'·'):'')+shortSrc(L.src)+'·'+L.i);
 
@@ -1125,6 +1135,18 @@ function render(){
   dry.title='저장했을 때 나올 그림을 지금 화면과 한 점씩 맞대 봅니다 (파일은 안 건드립니다)';
   dry.onclick=dryrun;b.appendChild(dry);
   const dlab=el('span','cap');dlab.id='drylab';b.appendChild(dlab);
+  // 재생하며 보기 — 멈춰 세우고 한 장씩 넘기면 «어느 장에서 튀는지» 를 짚을 수 있다.
+  b.appendChild(gap());
+  const pb=el('button');pb.id='playbtn';pb.textContent=playing?'⏸ 멈춤':'▶ 재생';
+  pb.title='재생을 멈추거나 다시 돌립니다. 멈춘 채로 층을 켜고 끄며 볼 수 있습니다.';
+  pb.onclick=()=>{playing=!playing;pb.textContent=playing?'⏸ 멈춤':'▶ 재생';
+    if(playing)play();else clearTimeout(playT)};
+  b.appendChild(pb);
+  const pv=el('button');pv.id='playprev';pv.textContent='◀';pv.title='앞 장으로 (멈춥니다)';
+  pv.onclick=()=>playStep(-1);b.appendChild(pv);
+  const nx=el('button');nx.id='playnext';nx.textContent='▶';nx.title='다음 장으로 (멈춥니다)';
+  nx.onclick=()=>playStep(1);b.appendChild(nx);
+  const plab=el('span','cap');plab.id='playlab';b.appendChild(plab);
   const qb=el('button');qb.textContent='끝내기';
   qb.title='안 올린 게 있으면 올리고 편집기를 끕니다';
   qb.onclick=async()=>{
@@ -1347,9 +1369,17 @@ function tracks(){
   const seen=new Map();
   seq.forEach((s,n)=>{(s.over||[]).forEach(L=>{
     const t=trackOf(L);
-    if(!seen.has(t))seen.set(t,{t,name:layName(L),blank:isBlank(L)});
+    if(!seen.has(t))seen.set(t,{t,name:layName(L),blank:isBlank(L),custom:!!L.name});
   })});
   return [...seen.values()];
+}
+/** 줄 이름 붙이기 — 그 줄의 칸마다 같은 이름을 적어 둔다(어느 칸을 봐도 이름이 나오게). */
+function setTrackName(t,name){
+  push();
+  seq.forEach(s=>{const L=celAt(s,t);
+    if(!L)return;
+    if(name)L.name=name;else delete L.name;
+  });
 }
 const celAt=(s,t)=>(s.over||[]).find(L=>trackOf(L)===t)||null;
 // 복사해 둔 칸(줄과 그림 번호). 「함께 쓰기」와 「사본」이 이걸 쓴다.
@@ -1363,12 +1393,50 @@ function timeline(){
   ts.slice().reverse().forEach(tr=>{         // 위에 그려지는 층이 위에 오게
     // 줄 이름을 칸 «앞» 에 두면 칸이 위 줄과 어긋나 세로로 안 읽힌다. 위에 얹는다.
     const head=el('div','tlname');
-    head.textContent=tr.name;
-    head.title='이 줄 전체를 켜고 끕니다';
     const anyOn=seq.some(s=>{const L=celAt(s,tr.t);return L&&!L.off});
-    head.onclick=()=>{push();seq.forEach(s=>{const L=celAt(s,tr.t);
-      if(L){if(anyOn)L.off=1;else delete L.off}});render()};
     if(!anyOn)head.style.opacity='.45';
+
+    const eye=el('button');eye.textContent=anyOn?'보임':'꺼짐';
+    eye.title='이 줄 전체를 켜고 끕니다';
+    eye.setAttribute('aria-pressed',String(anyOn));
+    eye.onclick=()=>{push();seq.forEach(s=>{const L=celAt(s,tr.t);
+      if(L){if(anyOn)L.off=1;else delete L.off}});render()};
+    head.appendChild(eye);
+
+    // 이름 — 층이 서넛 넘어가면 «그린 층 15» 로는 뭐가 뭔지 모른다. 눌러서 고친다.
+    const nm=el('span','tlnm');nm.textContent=tr.name;
+    nm.title='눌러서 이름을 고칩니다';
+    nm.onclick=()=>{
+      const inp=el('input');inp.className='tlnmin';inp.value=(tr.blank&&tr.custom)?tr.name:'';
+      inp.placeholder=tr.name;
+      const done=save=>{
+        if(inp.dataset.done)return;inp.dataset.done='1';
+        if(save)setTrackName(tr.t,inp.value.trim());
+        render();
+      };
+      inp.onkeydown=e=>{
+        if(e.key==='Enter'){e.preventDefault();done(true)}
+        if(e.key==='Escape'){e.preventDefault();done(false)}
+      };
+      inp.onblur=()=>done(true);
+      nm.replaceWith(inp);inp.focus();
+    };
+    head.appendChild(nm);
+
+    // 줄 통째로 밀기 — 층 하나를 몇 점 옮기고 싶을 때 칸을 일일이 열지 않게.
+    const at=celAt(seq.find(s=>celAt(s,tr.t))||seq[0],tr.t);
+    const nud=el('span','tlnud');
+    [['←',-1,0],['→',1,0],['↑',0,-1],['↓',0,1]].forEach(([t,ax,ay])=>{
+      const x=el('button');x.textContent=t;x.title='이 줄 전체를 밀기 (Shift 누르면 8점)';
+      x.onclick=e=>{const m=e.shiftKey?8:1;push();
+        seq.forEach(s=>{const L=celAt(s,tr.t);if(L){L.dx=(L.dx|0)+ax*m;L.dy=(L.dy|0)+ay*m}});
+        render()};
+      nud.appendChild(x);
+    });
+    const pos=el('span','cap');pos.textContent=(at?(at.dx|0):0)+','+(at?(at.dy|0):0);
+    nud.appendChild(pos);
+    head.appendChild(nud);
+
     box.appendChild(head);
     const r=el('div','tlrow');
     seq.forEach((s,n)=>{
@@ -1672,13 +1740,47 @@ function gameView(){
   return wrap;
 }
 
+/**
+ * 재생하며 보기.
+ *
+ * 예전에는 그냥 돌기만 해서 «지금 몇 번째 장인지» 를 알 수 없었다. 층을 켜고 끄며
+ * 볼 때는 그게 꼭 있어야 한다 — 어느 장에서 튀는지가 보여야 그 장을 고칠 수 있다.
+ * 그래서 도는 동안 그 장을 줄과 타임라인에 표시하고, 멈춰 세워 한 장씩 넘길 수도 있게 했다.
+ * 다시 그리지 않고 «표시만» 갈아끼운다 — 다시 그리면 재생이 처음으로 튄다.
+ */
+let playAt=0,playing=true;
+function markPlayhead(k){
+  const sp=document.getElementById('seqstrip');
+  if(sp)[...sp.children].filter(c=>c.classList.contains('slot'))
+    .forEach((c,i)=>c.classList.toggle('now',i===k));
+  document.querySelectorAll('.tlrow').forEach(r=>{
+    [...r.children].forEach((c,i)=>c.classList.toggle('now',i===k));
+  });
+  const lab=document.getElementById('playlab');
+  if(lab)lab.textContent=(k+1)+' / '+seq.length+'장';
+}
+/** 멈춘 채로 한 장씩 넘기기. */
+function playStep(d){
+  if(!seq.length)return;
+  playing=false;clearTimeout(playT);
+  playAt=(playAt+d+seq.length)%seq.length;
+  showFrame(playAt);
+  const b=document.getElementById('playbtn');if(b)b.textContent='▶ 재생';
+}
+function showFrame(k){
+  const im=$('#seqimg'),gm=$('#gamefx');
+  const u=slotURL(seq[k]);
+  if(im)im.src=u;if(gm)gm.src=u;
+  markPlayhead(k);
+}
 function play(){
   clearTimeout(playT);
   const im=$('#seqimg');if(!im||!seq.length)return;
-  const gm=$('#gamefx');
-  const D=delays();let k=0;
-  const step=()=>{const u=slotURL(seq[k]);
-    im.src=u;if(gm)gm.src=u;
+  if(playAt>=seq.length)playAt=0;
+  if(!playing){showFrame(playAt);return}
+  const D=delays();let k=playAt;
+  const step=()=>{
+    playAt=k;showFrame(k);
     const d=D[k];k=(k+1)%seq.length;playT=setTimeout(step,d)};
   step();
 }
@@ -1689,7 +1791,7 @@ function recipeSteps(){
       blend:L.blend||'normal',op:L.op===undefined?1:L.op,off:L.off?1:0,
       // 그린 층은 «누구인지» 도 적어야 한다. lid 를 빼면 다시 열었을 때 층들이
       // 한 열쇠로 뭉쳐 서로 덮어쓰고, track 을 빼면 한 줄로 합쳐진다.
-      lid:L.lid,track:L.track,
+      lid:L.lid,track:L.track,name:L.name,
       // 그린 층은 «누구인지» 도 적어야 한다. lid 를 빼면 다시 열었을 때 층들이
       // 한 열쇠로 뭉쳐 서로 덮어쓰고, track 을 빼면 한 줄로 합쳐진다.
       erase:isBlank(L)?(edits[layKey(L)]||[])

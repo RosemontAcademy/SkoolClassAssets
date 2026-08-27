@@ -75,6 +75,13 @@ try {
   await pg.locator('.ed button.close').click();
   await pg.waitForTimeout(800);
 
+  // 이름을 붙여 둔다 — 이것도 조리법에 남아야 한다
+  await pg.locator('.tlnm').first().click();
+  await pg.waitForTimeout(250);
+  await pg.locator('.tlnmin').fill('불티');
+  await pg.locator('.tlnmin').press('Enter');
+  await pg.waitForTimeout(700);
+
   const beforeLabel = await dry();
   const beforeRows = await pg.locator('.tlrow').count();
   const beforeCells = await pg.locator('.tlcel.on').count();
@@ -112,6 +119,8 @@ try {
   say(thumbsBefore.length === thumbsAfter.length && thumbsBefore.every((t, i) => t === thumbsAfter[i]),
     '칸 그림이 전과 한 자도 안 다르다');
   say(/^같음/.test(afterLabel), '다시 연 뒤에도 화면과 굽는 것이 같다', afterLabel);
+  say((await pg.locator('.tlnm').first().textContent()) === '불티',
+    '붙인 이름도 다시 열면 그대로다', await pg.locator('.tlnm').first().textContent());
   if (errs.length) { console.log('\n대본 오류:\n  ' + errs.join('\n  ')); fail++; }
 } finally {
   await b.close(); stop();

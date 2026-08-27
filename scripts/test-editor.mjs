@@ -694,6 +694,12 @@ try {
   await pg.waitForTimeout(700);
   const pos1 = await posOf();
   say(pos0 !== pos1, '줄을 밀면 자리 숫자가 바뀐다', pos0 + ' → ' + pos1);
+  // 밀어 둔 채로도 화면과 굽는 것이 같아야 한다 — 자리를 옮기는 기능은 딱 여기서 갈린다
+  await pg.evaluate(() => { const t = document.getElementById('drylab'); if (t) t.textContent = ''; });
+  await pg.locator('#drybtn').click();
+  await pg.waitForFunction(() => { const t = document.getElementById('drylab'); return t && t.textContent.length > 0; }, null, { timeout: 60000 });
+  say(/^같음/.test(await pg.locator('#drylab').textContent()), '줄을 밀어 둔 채로도 화면과 굽는 것이 같다',
+    await pg.locator('#drylab').textContent());
   await pg.locator('.tlnud button').nth(0).click();      // ← 도로
   await pg.waitForTimeout(700);
   say(await posOf() === pos0, '되밀면 제자리로 온다', await posOf());

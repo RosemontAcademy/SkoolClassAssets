@@ -618,7 +618,11 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .stage{width:calc(96px * var(--z,1));height:calc(96px * var(--z,1));flex:0 0 auto;border-radius:9px;border:1px solid var(--line);overflow:hidden;
     background-color:var(--cell);background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
     linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:16px 16px;background-position:0 0,8px 8px}
-  .stage img,.thumb img{image-rendering:pixelated;display:block;border:0}
+  .stage img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block}
+  .thumb img{image-rendering:pixelated;display:block;border:0}
+  .fr > img{width:calc(66px * var(--z,1));height:calc(66px * var(--z,1));object-fit:contain;image-rendering:pixelated;display:block;border-radius:5px;
+    background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
+    linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:12px 12px;background-position:0 0,6px 6px}
   .thumb{width:calc(66px * var(--z,1));height:calc(66px * var(--z,1));overflow:hidden;border-radius:5px;flex:0 0 auto;
     background-color:var(--cell);background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
     linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:12px 12px;background-position:0 0,6px 6px}
@@ -662,10 +666,10 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .row.pick .cap{margin:0;flex-basis:100%;text-align:left}
   .row.foreign{opacity:.95}
   .row.foreign .fr{border-style:dotted}
-  body[data-bg=dark] .stage,body[data-bg=dark] .thumb,body[data-bg=dark] .cw{background-image:none;background-color:#0A0B0F}
-  body[data-bg=light] .stage,body[data-bg=light] .thumb,body[data-bg=light] .cw{background-image:none;background-color:#fff}
-  body[data-bg=grey] .stage,body[data-bg=grey] .thumb,body[data-bg=grey] .cw{background-image:none;background-color:#8A8F9A}
-  body[data-bg=none] .stage,body[data-bg=none] .thumb,body[data-bg=none] .cw{background-image:none;background-color:transparent}
+  body[data-bg=dark] .stage,body[data-bg=dark] .thumb,body[data-bg=dark] .fr>img,body[data-bg=dark] .cwrap{background-image:none;background-color:#0A0B0F}
+  body[data-bg=light] .stage,body[data-bg=light] .thumb,body[data-bg=light] .fr>img,body[data-bg=light] .cwrap{background-image:none;background-color:#fff}
+  body[data-bg=grey] .stage,body[data-bg=grey] .thumb,body[data-bg=grey] .fr>img,body[data-bg=grey] .cwrap{background-image:none;background-color:#8A8F9A}
+  body[data-bg=none] .stage,body[data-bg=none] .thumb,body[data-bg=none] .fr>img,body[data-bg=none] .cwrap{background-image:none;background-color:transparent}
 
   /* ── 게임 화면 미리보기 ──
      게임은 FX 를 캐릭터 위에 얹고, 선생님 화면에서는 screen 합성으로 그린다.
@@ -687,25 +691,32 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .gopts .cur{gap:6px}
   .gnote{font-size:11.5px;color:var(--muted);line-height:1.5}
 
-  /* ── 큰 편집기 (프레임을 누르면 아래에 펼쳐진다) ── */
-  .ed{background:var(--surface);border:2px solid var(--accent);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px}
-  /* 전체화면 — 작은 도트를 크게 놓고 손볼 때 */
-  .ed.full{position:fixed;inset:12px;z-index:60;overflow:auto;box-shadow:0 24px 70px rgba(0,0,0,.5)}
-  .ed h2 button{font-size:12px;padding:4px 9px}
-  .ed h2{margin:0;font-size:14px;font-weight:800;display:flex;align-items:center;gap:8px}
+  /* ── 큰 편집기 — 아세프라이트 자리: 위 도구줄 · 왼 팔레트 · 가운데 칸 · 오른 도구 · 아래 장 ── */
+  .ed{background:var(--surface);border:2px solid var(--accent);border-radius:14px;padding:0;display:flex;flex-direction:column;gap:0;overflow:hidden}
+  .ed.full{position:fixed;inset:0;z-index:60;overflow:hidden;border-radius:0;border:0;box-shadow:none}
+  .ed h2 button{font-size:12px;padding:3px 7px}
+  .ed h2{margin:0;font-size:13px;font-weight:800;display:flex;align-items:center;gap:5px;flex:0 0 auto;flex-wrap:wrap;
+    padding:4px 8px;border-bottom:1px solid var(--line);background:var(--surface)}
   .ed h2 .mono{font-weight:600;font-size:12px;color:var(--muted)}
   .ed .close{margin-left:auto}
-  .edmain{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
-  .cw{border-radius:12px;padding:8px;background-color:var(--cell);position:relative;
-    background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
-    linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:16px 16px;background-position:0 0,8px 8px;
-    overflow:auto;max-width:100%;
-    display:flex;align-items:safe center;justify-content:safe center}
-  /* 확대하면 캔버스가 칸보다 커진다 — 칸이 스스로 스크롤돼야 도구가 안 밀린다 */
-  .ed.full .edmain{flex:1;min-height:0;align-items:stretch}
-  .ed.full .cw{flex:1;max-height:calc(100vh - 150px)}
-  .ed.full .tools{max-height:calc(100vh - 150px);overflow-y:auto}
-  .cwrap{position:relative;width:max-content;height:max-content}
+  .edmain{display:flex;gap:0;align-items:stretch;flex:1;min-height:0}
+  .palrail{width:188px;min-width:188px;overflow:hidden;padding:0;display:flex;flex-direction:column;
+    background:var(--surface);border-right:1px solid var(--line);flex:0 0 auto}
+  .edchars{flex:1;min-height:0;overflow-y:auto;border-bottom:1px solid var(--line)}
+  .edchars .sp{padding:6px 8px 5px}
+  .edcols{flex:1;min-height:0;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:5px}
+  .palrail .cur{flex-wrap:wrap;gap:4px}
+  .palrail input[type=range]{width:70px}
+  .hsvpick{display:flex;flex-direction:column;gap:3px}
+  .hsvpick canvas{width:100%;max-width:172px;height:56px;cursor:crosshair;border:1px solid #333;display:block}
+  .hsvpick .huesl{width:100%}
+  .fgbox{width:28px;height:28px;border:2px solid #222;flex:0 0 auto;cursor:pointer}
+  .cw{flex:1;min-width:0;min-height:0;border-radius:0;padding:0;position:relative;background:#6e6274;
+    overflow:auto;max-width:none;display:flex;align-items:safe center;justify-content:safe center}
+  .ed.full .cw{max-height:none}
+  .cwrap{position:relative;width:max-content;height:max-content;background-color:#c0c0c0;
+    background-image:linear-gradient(45deg,#808080 25%,transparent 25%,transparent 75%,#808080 75%),
+    linear-gradient(45deg,#808080 25%,transparent 25%,transparent 75%,#808080 75%);background-size:16px 16px;background-position:0 0,8px 8px}
   /* 캔버스에서 끌 때 옆 글자가 딸려 잡히면 Ctrl+C 가 «글자 복사» 로 새 버린다 — 아예 막는다 */
   .ed,#cv{user-select:none;-webkit-user-select:none}
   #cv{image-rendering:pixelated;cursor:crosshair;touch-action:none;border-radius:4px;display:block}
@@ -726,11 +737,8 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .selbox.flt .h{background:#ffd34d}
   .fltmark{position:absolute;left:12px;top:12px;font-size:10px;font-weight:800;color:#3a2c00;
     background:#ffd34d;border-radius:5px;padding:2px 7px;pointer-events:none;z-index:7}
-  /* 창 모드로 돌아가도 도구가 그림 아래로 접히지 않게. 그림 칸이 자기 안에서 스크롤한다. */
-  .ed:not(.full) .edmain{flex-wrap:nowrap}
-  .ed:not(.full) .cw{flex:1;min-width:0;max-height:70vh}
-  /* 도구 칸이 «글 길이만큼» 넓어지면 그림 칸이 그만큼 줄어 배율이 뚝 떨어진다
-     (실측: 안내문을 늘렸더니 6배가 2배로). 폭을 못 박고 글을 접는다. */
+  .ed:not(.full){min-height:70vh}
+  .ed:not(.full) .cw{max-height:none}
   /* 타임라인 — 「만든 것」 줄 아래로 층마다 한 줄. 칸 너비를 그 줄과 맞춰 세로로 읽힌다. */
   .tl{display:flex;flex-direction:column;gap:2px;margin-top:6px;width:100%;overflow-x:auto}
   .tlrow{display:flex;gap:6px;align-items:center}
@@ -754,13 +762,36 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
     color:var(--ink)}
   .tlcel.off{opacity:.4}
   .tlcel:hover{border-color:var(--accent)}
-  .tools{display:flex;flex-direction:column;gap:8px;min-width:210px;max-width:280px;flex:0 0 auto}
-  .tools .cap{white-space:normal;word-break:keep-all;line-height:1.5}
+  .tools{display:flex;flex-direction:column;gap:3px;width:52px;min-width:52px;max-width:52px;flex:0 0 auto;
+    overflow-y:auto;padding:3px 2px;background:var(--surface);border-left:1px solid var(--line)}
+  .tools .cap{white-space:normal;word-break:keep-all;line-height:1.45;font-size:11px}
   .tools button{white-space:nowrap}
-  .tgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
-  .tgrid button{padding:7px 4px;font-size:12px}
-  .pal{display:flex;flex-wrap:wrap;gap:4px;max-width:230px}
-  .sw{width:20px;height:20px;border-radius:5px;border:2px solid var(--line);cursor:pointer;padding:0}
+  .tgrid{display:grid;grid-template-columns:1fr 1fr;gap:1px}
+  .tgrid button,.tools .ico,.edplay button{width:22px;height:22px;padding:0;font-size:11px;line-height:1;border-radius:0;
+    display:inline-flex;align-items:center;justify-content:center}
+  .tgrid button svg,.tools .ico svg{display:block;pointer-events:none}
+  .tools .cur{flex-wrap:wrap;gap:1px}
+  .tools .cur button.ico{width:22px;height:22px;padding:0;min-width:22px}
+  .pal{display:flex;flex-wrap:wrap;gap:0;max-width:120px}
+  .edtl{display:flex;align-items:stretch;gap:8px;flex:0 0 auto;padding:6px 8px;
+    background:var(--surface);border-top:1px solid var(--line)}
+  .edprev{width:84px;height:84px;flex:0 0 auto;border:1px solid var(--line);border-radius:6px;overflow:hidden;
+    background-color:#c0c0c0;background-image:linear-gradient(45deg,#808080 25%,transparent 25%,transparent 75%,#808080 75%),
+    linear-gradient(45deg,#808080 25%,transparent 25%,transparent 75%,#808080 75%);background-size:12px 12px;background-position:0 0,6px 6px}
+  .edprev img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block}
+  .edplay{display:flex;flex-direction:column;justify-content:center;gap:2px;flex:0 0 auto}
+  .edcels{display:flex;flex-wrap:wrap;gap:4px;align-content:flex-start;flex:1;min-width:0;overflow-y:auto;max-height:120px}
+  .edcel{width:56px;padding:2px;border:2px solid var(--line);border-radius:6px;background:var(--cell);cursor:pointer;flex:0 0 auto}
+  .edcel img{width:52px;height:52px;object-fit:contain;image-rendering:pixelated;display:block;border-radius:3px}
+  .edcel .m{font-size:9px;text-align:center;color:var(--muted);line-height:1.2}
+  .edcel.on{border-color:var(--accent)}
+  .edcel.now{box-shadow:0 0 0 2px #ffd34d}
+  .sw{width:12px;height:12px;border-radius:0;border:1px solid #666;cursor:pointer;padding:0}
+  .ed.full{background:#bdbdbd}
+  .ed.full h2,.ed.full .palrail,.ed.full .tools,.ed.full .edtl{background:#c8c8c8;color:#111;border-color:#8a8a8a}
+  .ed.full h2 button,.ed.full .tools button,.ed.full .edplay button,.ed.full .palrail button{
+    background:#c8c8c8;border:1px solid #eee;border-right-color:#555;border-bottom-color:#555;border-radius:0;color:#111}
+  .ed.full .tools button[aria-pressed=true],.ed.full h2 button[aria-pressed=true]{background:#a8c4ff;border-color:#333;color:#111}
   .sw.on{border-color:var(--accent);transform:scale(1.12)}
   .cur{display:flex;align-items:center;gap:7px;font-size:12px}
   .cur .box{width:26px;height:26px;border-radius:6px;border:1px solid var(--line)}
@@ -1056,10 +1087,8 @@ function rebuildEdited(done){
   jobs.forEach(j=>buildEdited(j[0],j[1],j[2],()=>{if(--left<=0)done()}));
 }
 
-async function boot(){
-  await loadCalib();
-  items=await (await fetch('/api/items')).json();
-  const L=$('#list');
+function fillCharList(box,fromEd){
+  box.innerHTML='';
   let last='';
   items.forEach(it=>{
     if(it.dir!==last){
@@ -1067,14 +1096,27 @@ async function boot(){
       const g=el('div','sp');
       const nm=el('div','spn');nm.textContent=it.dir.replace(/^\\d+-/,'');g.appendChild(nm);
       const ks=el('div','spk');ks.dataset.dir=it.dir;g.appendChild(ks);
-      L.appendChild(g);
+      box.appendChild(g);
     }
-    const ks=L.querySelector('.spk[data-dir="'+it.dir+'"]');
+    const ks=box.querySelector('.spk[data-dir="'+it.dir+'"]');
     const d=el('button','it');d.dataset.id=it.id;d.type='button';
     d.textContent=it.kind;
     if(it.done){const dot=el('span','done');dot.textContent='●';d.appendChild(dot)}
-    d.onclick=()=>load(it);ks.appendChild(d);
+    if(cur&&cur.id===it.id)d.classList.add('on');
+    d.onclick=()=>{
+      if(cur&&cur.id===it.id)return;
+      if(!fromEd){load(it);return}
+      const c=commitStrokes();
+      const go=()=>load(it);
+      if(c)buildEdited(c.key,c.src,c.i,go,c.blank?{w:c.w,h:c.h}:null);else go();
+    };
+    ks.appendChild(d);
   });
+}
+async function boot(){
+  await loadCalib();
+  items=await (await fetch('/api/items')).json();
+  fillCharList($('#list'),false);
 
   // SkoolClass 설정의 「FX 편집기」 단추가 ?dir=25-pikachu&kind=attack 로 부른다.
   // 62개 목록에서 눈으로 찾게 하면 단추를 만든 의미가 없다.
@@ -1285,14 +1327,13 @@ function strip(s){
   const row=el('div','row');
   const box=el('div');const st=el('div','stage');const im=el('img');st.appendChild(im);box.appendChild(st);
   const c=el('div','cap');c.textContent=s.label+' '+s.frames+'장';box.appendChild(c);row.appendChild(box);
-  let k=0;stripTimers.push(setInterval(()=>{if(!meta[s.id])return;k=(k+1)%s.frames;im.src=furl(s.id,k);fitThumb(im)},250));
-  fitThumb(im);
+  let k=0;stripTimers.push(setInterval(()=>{if(!meta[s.id])return;k=(k+1)%s.frames;im.src=furl(s.id,k)},250));
   const sp=el('div','strip');
   for(let i=0;i<s.frames;i++){
     const f=meta[s.id].fills[i],blank=i>0&&f<meta[s.id].fills[0]*0.25;
     const b=el('div','fr'+(blank?' blank':'')+(nEdits(s.id,i)?' edited':'')+(openEd&&openEd.key===K(s.id,i)?' sel':''));
     b.draggable=true;
-    b.appendChild(pix(furl(s.id,i)));
+    const img=el('img');img.src=furl(s.id,i);b.appendChild(img);
     const m=el('div','m');m.textContent=i+' · '+f+'%'+(blank?' 빔':'');b.appendChild(m);
     b.onclick=()=>{const c=commitStrokes();openEd={src:s.id,i,key:K(s.id,i)};mountedKey=null;
       const go=()=>{render();setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
@@ -1321,6 +1362,13 @@ function dupSlot(s){
   const e=slotEdits(s);
   if(e.length)edits['slot:'+c.uid]=e.map(x=>JSON.parse(JSON.stringify(x)));
   return c;
+}
+function openSeq(n){
+  const s=seq[n];if(!s)return;
+  playAt=n;
+  const c=commitStrokes();openEd={src:s.src,i:s.i,key:slotOwn(s)};mountedKey=null;
+  const go=()=>render();
+  if(c)buildEdited(c.key,c.src,c.i,go,c.blank?{w:c.w,h:c.h}:null);else go();
 }
 function seqRow(){
   const row=el('div','row seq');
@@ -1354,9 +1402,7 @@ function seqRow(){
       selSlot=n;drag=null;render()});
     // 담아 놓고 보다가 손보고 싶어지는 게 자연스러운 순서다. 재료 줄로 되돌아가
     // 같은 낱장을 다시 찾게 만들면 안 된다.
-    b.onclick=()=>{const c=commitStrokes();openEd={src:s.src,i:s.i,key:slotOwn(s)};mountedKey=null;
-      const go=()=>{render();setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
-      if(c)buildEdited(c.key,c.src,c.i,go,c.blank?{w:c.w,h:c.h}:null);else go()};
+    b.onclick=()=>openSeq(n);
     const ops=el('div','ops');
     [['✎','edit'],['層','lay'],['⧉','dup'],['◀',-1],['▶',1],['×',0]].forEach(([t,d])=>{
       const x=el('button',d===0?'x':'');x.textContent=t;
@@ -1579,7 +1625,8 @@ function extraStrip(x){
   const sp=el('div','strip');
   x.fills.forEach((f,i)=>{
     const b=el('div','fr');
-      b.appendChild(pix('/frame.png?dir='+encodeURIComponent(x.dir)+'&kind='+x.kind+'&src='+x.src+'&i='+i));
+      const img=el('img');img.src='/frame.png?dir='+encodeURIComponent(x.dir)+'&kind='+x.kind+'&src='+x.src+'&i='+i;
+      b.appendChild(img);
     const m=el('div','m');m.textContent=i+' · '+f+'%';b.appendChild(m);
     b.draggable=true;b.title='칸 위로 끌어다 놓으면 층으로 얹힙니다';
     b.addEventListener('dragstart',e=>{drag={kind:'layer',dir:x.dir,dirKind:x.kind,src:x.src,i};
@@ -1817,15 +1864,18 @@ function gameView(){
  * 다시 그리지 않고 «표시만» 갈아끼운다 — 다시 그리면 재생이 처음으로 튄다.
  */
 let playAt=0,playing=true;
-function markPlayhead(k){
+  function markPlayhead(k){
   const sp=document.getElementById('seqstrip');
   if(sp)[...sp.children].filter(c=>c.classList.contains('slot'))
     .forEach((c,i)=>c.classList.toggle('now',i===k));
   document.querySelectorAll('.tlrow').forEach(r=>{
     [...r.children].forEach((c,i)=>c.classList.toggle('now',i===k));
   });
+  document.querySelectorAll('.edcel').forEach((c,i)=>c.classList.toggle('now',i===k));
   const lab=document.getElementById('playlab');
   if(lab)lab.textContent=(k+1)+' / '+seq.length+'장';
+  const pb=document.getElementById('edplaybtn');
+  if(pb)pb.textContent=playing?'⏸':'▶';
 }
 /** 멈춘 채로 한 장씩 넘기기. */
 function playStep(d){
@@ -1836,14 +1886,14 @@ function playStep(d){
   const b=document.getElementById('playbtn');if(b)b.textContent='▶ 재생';
 }
 function showFrame(k){
-  const im=$('#seqimg'),gm=$('#gamefx');
+  const im=$('#seqimg'),gm=$('#gamefx'),ep=$('#edprev');
   const u=slotURL(seq[k]);
-  if(im){im.src=u;fitThumb(im)}if(gm)gm.src=u;
+  if(im){im.src=u;fitThumb(im)}if(gm)gm.src=u;if(ep)ep.src=u;
   markPlayhead(k);
 }
 function play(){
   clearTimeout(playT);
-  const im=$('#seqimg');if(!im||!seq.length)return;
+  const im=$('#seqimg'),ep=$('#edprev');if((!im&&!ep)||!seq.length)return;
   if(playAt>=seq.length)playAt=0;
   if(!playing){showFrame(playAt);return}
   const D=delays();let k=playAt;
@@ -2881,19 +2931,44 @@ function commitStrokes(){
   return {key:k,src:openEd.src,i:openEd.i,blank:!!openEd.blank,
     w:base?base.w:0,h:base?base.h:0};
 }
+function rgb2hsv(r,g,b){
+  r/=255;g/=255;b/=255;
+  const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;
+  let h=0;
+  if(d){if(max===r)h=((g-b)/d+6)%6;else if(max===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60}
+  return {h:h,s:max?d/max:0,v:max};
+}
+function hsv2hex(h,s,v){
+  const f=n=>{const k=(n+h/60)%6;return Math.round(255*(v-v*s*Math.max(0,Math.min(k,4-k,1))))};
+  return '#'+[f(5),f(3),f(1)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function paintSV(cv,h){
+  const c=cv.getContext('2d'),w=cv.width,ht=cv.height,d=c.createImageData(w,ht);
+  for(let y=0;y<ht;y++)for(let x=0;x<w;x++){
+    const hex=hsv2hex(h,x/Math.max(1,w-1),1-y/Math.max(1,ht-1)),i=(y*w+x)*4;
+    const rgb=[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
+    d.data[i]=rgb[0];d.data[i+1]=rgb[1];d.data[i+2]=rgb[2];d.data[i+3]=255;
+  }
+  c.putImageData(d,0,0);
+}
 function editor(){
   const wrap=el('div','ed'+(edFull?' full':''));
   const h=el('h2');h.innerHTML='낱장 편집 <span class="mono">'+shortSrc(openEd.src)+'·'+openEd.i+'</span>';
   const zl=el('span');zl.className='lbl';zl.style.marginLeft='auto';zl.textContent='확대';h.appendChild(zl);
   const zBtns=[];
-  [[0,'그림'],[-1,'칸'],[2,'2배'],[4,'4배'],[8,'8배'],[12,'12배'],[16,'16배']].forEach(([v,n])=>{
+  const markZ=()=>zBtns.forEach(t=>t.setAttribute('aria-pressed',String(+t.dataset.z===edZoom)));
+  [[0,'그림','그려진 것에 맞춤 — 빈 칸은 잘라 봅니다'],[-1,'칸','256칸 전체에 맞춥니다']].forEach(([v,n,tip])=>{
     const x=el('button');x.textContent=n;x.dataset.z=v;x.setAttribute('aria-pressed',String(edZoom===v));
-    x.title=v===0?'그려진 것에 맞춰 키웁니다 — 빈 칸은 잘라 봅니다':v<0?'256칸 전체에 맞춥니다':'고정 배율. 보던 자리를 붙잡습니다.';
-    // 그림=그려진 네모에 맞춤. 칸=캔버스 전체. 배율 단추는 «보던 자리» 를 붙잡는다.
-    x.onclick=()=>{edZoom=v;if(v>0)setZoomKeep(v);else if(v<0)fitCanvas();else fitContent();
-      zBtns.forEach(t=>t.setAttribute('aria-pressed',String(+t.dataset.z===v)))};
+    x.title=tip;
+    x.onclick=()=>{edZoom=v;if(v<0)fitCanvas();else fitContent();markZ()};
     zBtns.push(x);h.appendChild(x)});
+  const zm=el('button');zm.textContent='−';zm.title='축소 (휠도 됩니다)';
+  zm.onclick=()=>{if(!base)return;edZoom=Math.max(1,base.z-1);setZoomKeep(edZoom);markZ()};h.appendChild(zm);
   const zl2=el('span');zl2.id='zlab';zl2.className='lbl';zl2.style.minWidth='34px';h.appendChild(zl2);
+  const zp=el('button');zp.textContent='＋';zp.title='확대 (휠도 됩니다)';
+  zp.onclick=()=>{if(!base)return;edZoom=Math.min(32,base.z+1);setZoomKeep(edZoom);markZ()};h.appendChild(zp);
+  const q=el('button');q.textContent='❓';q.title='휠 확대 · 스페이스+끌기 화면 밀기 · B 연필 E 지우개 I 스포이드 G 페인트통 V 이동 · [ ] 붓 굵기 · Ctrl+Z 되돌리기 · Enter 내려놓기 Esc 물리기 · 도구는 올려 두면 설명이 뜹니다';
+  h.appendChild(q);
   const fs=el('button');fs.textContent=edFull?'창으로':'전체화면';fs.setAttribute('aria-pressed',String(edFull));
   fs.onclick=()=>{edFull=!edFull;render()};h.appendChild(fs);
   const cls=el('button','close');cls.textContent='닫기';cls.style.marginLeft='0';
@@ -2908,17 +2983,71 @@ function editor(){
   const ov=el('canvas');ov.id='selov';    // 올가미로 고른 «네모 아닌» 테두리를 그리는 칸
   inner.append(on,cv,gr,ov);cw.appendChild(inner);
   if(onionOn){const mk=el('div','onionmark');mk.textContent='앞뒤 '+onionN+'장 비침 — 파랑 앞 · 빨강 뒤';cw.appendChild(mk)}
-  main.appendChild(cw);
+
+  const L=el('div','palrail');
+  const chars=el('div','edchars');fillCharList(chars,true);L.appendChild(chars);
+  const cols=el('div','edcols');L.appendChild(cols);
+  const pw=el('div','pal');cols.appendChild(pw);
+  const hsv=el('div','hsvpick');
+  const sv=el('canvas');sv.id='svcan';sv.width=120;sv.height=56;sv.title='채도·밝기';
+  const hues=el('input');hues.type='range';hues.id='huesl';hues.min=0;hues.max=360;hues.className='huesl';hues.title='색조';
+  const fg=el('div','fgbox');fg.id='fgbox';fg.style.background=color;fg.title='지금 색 — 눌러서 고르기';
+  const ci0=el('input');ci0.type='color';ci0.value=color;ci0.style.cssText='position:absolute;opacity:0;width:0;height:0';
+  fg.appendChild(ci0);fg.onclick=()=>ci0.click();
+  ci0.oninput=e=>setColor(e.target.value);
+  hsv.append(sv,hues,fg);cols.appendChild(hsv);
+  const pickSV=e=>{
+    const r=sv.getBoundingClientRect();
+    const s=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+    const v=Math.max(0,Math.min(1,1-(e.clientY-r.top)/r.height));
+    setColor(hsv2hex(+hues.value,s,v));
+  };
+  sv.onpointerdown=e=>{sv.setPointerCapture(e.pointerId);pickSV(e)};
+  sv.onpointermove=e=>{if(e.buttons)pickSV(e)};
+  hues.oninput=()=>{
+    const t=rgb2hsv.apply(null,hex2rgb(color));
+    setColor(hsv2hex(+hues.value,t.s,t.v));
+  };
+  setTimeout(()=>{const t=rgb2hsv.apply(null,hex2rgb(color));hues.value=Math.round(t.h);paintSV(sv,+hues.value)},0);
 
   const T=el('div','tools');
   const tg=el('div','tgrid');
   // 도구를 바꿀 때마다 render() 를 부르면 편집기가 통째로 다시 만들어지고
   // 캔버스가 새로 붙느라 화면이 깜빡인다. 단추 상태만 갈아끼운다.
   const toolBtns=[];
-  [['pencil','연필'],['eraser','지우개'],['picker','스포이드'],['bucket','페인트통'],['swap','색바꾸기'],['move','이동'],
-   ['sel','네모 선택'],['lasso','올가미'],['ellipse','타원 선택'],['wand','마술봉'],
-   ['line','직선'],['rect','네모 그리기'],['oval','타원 그리기'],['shade','명암'],['brush','도장붓']]
-    .forEach(([id,n])=>{const x=el('button');x.textContent=n;x.dataset.tool=id;
+  const ICO={
+    pencil:'<svg viewBox="0 0 16 16"><path d="M3 13 5 9 13 1l2 2-8 8z" fill="#fc8" stroke="#111" stroke-width="1"/><path d="M3 13h2v-2" fill="#fc8" stroke="#111"/></svg>',
+    eraser:'<svg viewBox="0 0 16 16"><path d="M3 8 8 3l5 5-4 4H5z" fill="#f8c" stroke="#111"/><path d="M4 12h8" stroke="#111"/></svg>',
+    picker:'<svg viewBox="0 0 16 16"><path d="M10 2l4 4-7 7H3V9z" fill="#8cf" stroke="#111"/><path d="M9 3l4 4" stroke="#111"/></svg>',
+    bucket:'<svg viewBox="0 0 16 16"><path d="M3 6h8l-1 7H5z" fill="#6af" stroke="#111"/><path d="M4 6l4-3 4 3" fill="none" stroke="#111"/></svg>',
+    swap:'<svg viewBox="0 0 16 16"><path d="M3 5h8M9 3l3 2-3 2M13 11H5M7 9l-3 2 3 2" fill="none" stroke="#111" stroke-width="1.2"/></svg>',
+    move:'<svg viewBox="0 0 16 16"><path d="M8 2v12M2 8h12M8 2l-2 2M8 2l2 2M8 14l-2-2M8 14l2-2M2 8l2-2M2 8l2 2M14 8l-2-2M14 8l-2 2" stroke="#111" fill="none"/></svg>',
+    sel:'<svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" fill="none" stroke="#111" stroke-dasharray="2 1.5"/></svg>',
+    lasso:'<svg viewBox="0 0 16 16"><path d="M4 8c0-3 3-5 6-4s3 5 0 6c-2 1-4 0-5-2" fill="none" stroke="#111"/><circle cx="5" cy="11" r="1.4" fill="#111"/></svg>',
+    ellipse:'<svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="5.5" ry="4.2" fill="none" stroke="#111" stroke-dasharray="2 1.5"/></svg>',
+    wand:'<svg viewBox="0 0 16 16"><path d="M3 13l7-7" stroke="#111" stroke-width="1.4"/><path d="M11 2v2M10 3h2M13 5v2M12 6h2" stroke="#111"/></svg>',
+    line:'<svg viewBox="0 0 16 16"><path d="M3 13 13 3" stroke="#111" stroke-width="1.4"/></svg>',
+    rect:'<svg viewBox="0 0 16 16"><rect x="3" y="4" width="10" height="8" fill="none" stroke="#111"/></svg>',
+    oval:'<svg viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="5.5" ry="4.2" fill="none" stroke="#111"/></svg>',
+    shade:'<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="#111"/><path d="M8 3a5 5 0 0 1 0 10z" fill="#ccc"/></svg>',
+    brush:'<svg viewBox="0 0 16 16"><rect x="6" y="2" width="4" height="7" fill="#ea4" stroke="#111"/><path d="M6 9h4l1 5H5z" fill="#fc8" stroke="#111"/></svg>'
+  };
+  [['pencil','연필 (B) — 점을 칠합니다'],
+   ['eraser','지우개 (E) — 점을 지웁니다'],
+   ['picker','스포이드 (I) — 찍은 색을 고릅니다'],
+   ['bucket','페인트통 (G) — 이어진 같은 색을 채웁니다'],
+   ['swap','색바꾸기 — 고른 색과 같은 점을 바꿉니다'],
+   ['move','이동 (V) — 그림 전체를 밉니다'],
+   ['sel','네모 선택 (M) — 끌어 고릅니다. 안을 끌면 들립니다'],
+   ['lasso','올가미 (Q) — 자유 곡선으로 고릅니다'],
+   ['ellipse','타원 선택 — 타원으로 고릅니다'],
+   ['wand','마술봉 (W) — 비슷한 색 덩어리를 고릅니다'],
+   ['line','직선 (L) — Shift 면 반듯하게'],
+   ['rect','네모 그리기 (U) — Shift 면 정사각'],
+   ['oval','타원 그리기 (O) — Shift 면 정원'],
+   ['shade','명암 — 그 낱장 색들 사이를 한 눈금씩'],
+   ['brush','도장붓 — 고른 무늬를 찍습니다']]
+    .forEach(([id,tip])=>{const x=el('button');x.innerHTML=ICO[id];x.dataset.tool=id;x.title=tip;
       x.setAttribute('aria-pressed',String(tool===id));
       x.onclick=()=>setTool(id);
       toolBtns.push(x);tg.appendChild(x)});
@@ -2927,8 +3056,8 @@ function editor(){
   // 고른 조각을 다루는 단추들. 고른 게 없으면 흐리게 둔다.
   const selRow=el('div','cur');selRow.id='selrow';selRow.style.flexWrap='wrap';
   const sLab=el('span');sLab.className='mono';sLab.id='sellab';sLab.textContent='고른 곳 없음';
-  selRow.appendChild(sLab);
-  const selBtn=(t,title,fn,needflt)=>{const x=el('button');x.textContent=t;x.title=title;
+  cols.appendChild(sLab);
+  const selBtn=(t,title,fn,needflt)=>{const x=el('button','ico');x.textContent=t;x.title=title;
     if(needflt)x.dataset.needflt='1';
     x.onclick=()=>{if(needflt?!flt:!sel)return;fn();drawSel();updateSelLab()};selRow.appendChild(x);return x};
   // 돌리기·뒤집기·크기는 전부 «떠 있는 채로» 한다. 안 구우니 몇 번을 눌러도 안 뭉갠다.
@@ -2946,7 +3075,7 @@ function editor(){
   });
   selBtn('＋','10% 크게 (가운데 기준) — 모서리 손잡이를 끌어도 됩니다',()=>scaleBy(1.1));
   selBtn('－','10% 작게 (가운데 기준) — 모서리 손잡이를 끌어도 됩니다',()=>scaleBy(0.9));
-  selBtn('지우기','고른 곳을 비웁니다',()=>{
+  selBtn('🗑','고른 곳을 비웁니다',()=>{
     if(flt){                      // 떠 있는 걸 지우면 «뜬 자리를 비운 것» 만 남는다
       const f=flt.from,copy=flt.copy;flt=null;fltBase=null;
       if(!copy)pushStrokes([eraseStroke(f)]);
@@ -2965,26 +3094,11 @@ function editor(){
     fltEdit(()=>fltSetAngle(+rotIn.value))};
   rotRow.append(rotLab,rotIn,rotVal);
 
-  selBtn('내려놓기','떠 있는 조각을 그림에 박습니다 (Enter)',()=>{dropFloat();sel=null},true);
-  selBtn('물리기','붙이거나 들어 올린 것을 없던 일로 (Esc)',()=>cancelFloat(),true);
-  selBtn('해제','고르기를 풉니다',()=>{dropFloat();sel=null});
+  selBtn('📌','떠 있는 조각을 그림에 박습니다 (Enter)',()=>{dropFloat();sel=null},true);
+  selBtn('↩','붙이거나 들어 올린 것을 없던 일로 (Esc)',()=>cancelFloat(),true);
+  selBtn('✕','고르기를 풉니다',()=>{dropFloat();sel=null});
   T.appendChild(selRow);
-  T.appendChild(rotRow);
-  const helpBtn=el('button');helpBtn.textContent=showEdHelp?'조작법 접기':'조작법';
-  helpBtn.setAttribute('aria-pressed',String(showEdHelp));
-  helpBtn.onclick=()=>{showEdHelp=!showEdHelp;helpBtn.textContent=showEdHelp?'조작법 접기':'조작법';
-    helpBtn.setAttribute('aria-pressed',String(showEdHelp));
-    document.querySelectorAll('.edhelp').forEach(n=>n.style.display=showEdHelp?'':'none')};
-  T.appendChild(helpBtn);
-  const selHint=el('div','edhelp');selHint.className='cap edhelp';selHint.style.textAlign='left';
-  selHint.style.display=showEdHelp?'':'none';
-  selHint.innerHTML='고르는 도구 넷 — <b>네모</b>(M) <b>올가미</b>(Q) <b>타원 선택</b> <b>마술봉</b>(W, 비슷한 색 덩어리) · '
-    +'그리는 도구 — <b>직선</b>(L) <b>네모</b>(U) <b>타원</b>(O), <b>Shift</b> 면 반듯하게 · '
-    +'<b>Shift</b> 더하기 <b>Alt</b> 빼기 · 안을 <b>끌면 들려서</b> 떠 있게 됩니다 — 그동안은 본체가 안 따라옵니다 · '
-    +'<b>모서리 손잡이</b>로 크기(Shift 면 비율 유지) · <b>Alt+끌면 복제</b> · '
-    +'<b>Ctrl+C</b> 복사 <b>Ctrl+X</b> 오려내기 <b>Ctrl+V</b> 붙이기 (다른 낱장에도 그림째 갑니다) · '
-    +'<b>화살표</b> 한 점씩 밀기 · <b>Enter</b> 내려놓기 <b>Esc</b> 물리기';
-  T.appendChild(selHint);
+  cols.appendChild(rotRow);
 
   const cur=el('div','cur');const box=el('div','box');box.style.background=color;
   const ci=el('input');ci.type='color';ci.value=color;ci.oninput=e=>{color=e.target.value;box.style.background=color};
@@ -2992,27 +3106,27 @@ function editor(){
   const bi=el('input');bi.id='brushrange';bi.type='range';bi.min=1;bi.max=24;bi.value=brush;bi.style.width='90px';
   bi.oninput=e=>{brush=+e.target.value;bs.textContent=brush};
   const bs=el('span');bs.id='brushnum';bs.className='mono';bs.textContent=brush;
-  cur.append(bi,bs);T.appendChild(cur);
+  cur.append(bi,bs);cols.appendChild(cur);
 
   // 도형·대칭 손잡이 — 그리기 도구를 들었을 때 손이 가는 자리다.
   const shRow=el('div','cur');shRow.style.flexWrap='wrap';
-  const fillBtn=el('button');fillBtn.id='fillshape';fillBtn.textContent='속 채우기';
-  fillBtn.title='네모·타원을 속까지 칠합니다 (끄면 테두리만)';
+  const fillBtn=el('button','ico');fillBtn.id='fillshape';fillBtn.textContent='⬛';
+  fillBtn.title='속 채우기 — 네모·타원을 속까지 칠합니다 (끄면 테두리만)';
   fillBtn.setAttribute('aria-pressed',String(fillShape));
   fillBtn.onclick=()=>{fillShape=!fillShape;fillBtn.setAttribute('aria-pressed',String(fillShape))};
-  const dirBtn=el('button');dirBtn.id='shadedir';
-  const dirLab=()=>shadeDir<0?'명암 · 어둡게':'명암 · 밝게';
+  const dirBtn=el('button','ico');dirBtn.id='shadedir';
+  const dirLab=()=>shadeDir<0?'🌙':'☀️';
   dirBtn.textContent=dirLab();
-  dirBtn.title='명암 붓이 어느 쪽으로 갈지 — 그 낱장이 쓰던 색들 사이를 한 눈금씩 오갑니다';
+  dirBtn.title='명암 방향 — 어둡게/밝게. 그 낱장이 쓰던 색들 사이를 한 눈금씩';
   dirBtn.onclick=()=>{shadeDir=-shadeDir;dirBtn.textContent=dirLab()};
   shRow.appendChild(dirBtn);
-  const dithBtn=el('button');dithBtn.id='dither';dithBtn.textContent='무늬';
-  dithBtn.title='한 점 걸러 한 점만 칠합니다 — 도트로 중간 톤을 내는 옛 손입니다(연필·페인트통·도형)';
+  const dithBtn=el('button','ico');dithBtn.id='dither';dithBtn.textContent='░';
+  dithBtn.title='무늬 — 한 점 걸러 한 점만 칠합니다 (연필·페인트통·도형)';
   dithBtn.setAttribute('aria-pressed',String(dithOn));
   dithBtn.onclick=()=>{dithOn=!dithOn;dithBtn.setAttribute('aria-pressed',String(dithOn))};
   shRow.appendChild(dithBtn);
-  const symBtn=el('button');symBtn.id='symmetry';symBtn.textContent='좌우 대칭';
-  symBtn.title='그은 것을 반대쪽에도 그대로 — 이펙트는 대칭이 많아 손이 반으로 줍니다';
+  const symBtn=el('button','ico');symBtn.id='symmetry';symBtn.textContent='☯';
+  symBtn.title='좌우 대칭 — 그은 것을 반대쪽에도 그대로';
   symBtn.setAttribute('aria-pressed',String(symOn));
   symBtn.onclick=()=>{symOn=!symOn;symBtn.setAttribute('aria-pressed',String(symOn));drawSel()};
   shRow.append(fillBtn,symBtn);T.appendChild(shRow);
@@ -3026,19 +3140,17 @@ function editor(){
     const un=el('button');un.id='unlink';un.textContent='따로 떼기';
     un.title='이 장만 제 그림을 갖게 합니다. 지금 것을 베껴서 떼므로 보이는 건 안 바뀝니다.';
     un.onclick=unlinkCel;
-    warn.append(wt,un);T.appendChild(warn);
+    warn.append(wt,un);cols.appendChild(warn);
   }
 
   // 「모든 장에」 — 이펙트는 12장이 한 몸이라, 한 장만 고치는 일이 오히려 드물다.
-  const allRow=el('div','cur');
-  const allBtn=el('button');allBtn.id='allframes';allBtn.textContent='모든 장에 한 번에';
-  allBtn.title='켜 두면 색 손보기·조각 내려놓기·지우기가 이어 붙인 칸 전부에 그대로 얹힙니다. 층을 고치는 중이면 그 층의 줄에만 얹히고 바닥은 안 건드립니다.';
+  const allBtn=el('button','ico');allBtn.id='allframes';allBtn.textContent='📚';
+  allBtn.title=allFrames?('모든 장에 한 번에 · 켬 ('+seq.length+'칸)'):'모든 장에 한 번에 — 색 손보기·내려놓기·지우기가 이어 붙인 칸 전부에 얹힙니다';
   allBtn.setAttribute('aria-pressed',String(allFrames));
   allBtn.onclick=()=>{allFrames=!allFrames;allBtn.setAttribute('aria-pressed',String(allFrames));
-    allBtn.textContent=allFrames?('모든 장에 한 번에 · 켬('+seq.length+'칸)'):'모든 장에 한 번에';
+    allBtn.title=allFrames?('모든 장에 한 번에 · 켬 ('+seq.length+'칸)'):'모든 장에 한 번에';
     toast(allFrames?('이제 '+seq.length+'칸 모두에 얹힙니다'):'이제 이 낱장에만 얹힙니다')};
-  if(allFrames)allBtn.textContent='모든 장에 한 번에 · 켬('+seq.length+'칸)';
-  allRow.appendChild(allBtn);T.appendChild(allRow);
+  T.appendChild(allBtn);
 
   // ── 색 손보기 ──────────────────────────────────────────────────────────
   // 같은 이펙트를 속성별로 갈아입히는 손. 고른 곳이 있으면 «거기만», 없으면 낱장 통째로.
@@ -3082,62 +3194,78 @@ function editor(){
       i.parentNode.lastChild.textContent=d+(i.dataset.adj==='hue'?'도':i.dataset.adj==='con'?'':'%')});
     redraw()};
   adjBtns.append(adjApply,adjReset);adjBox.appendChild(adjBtns);
-  T.appendChild(adjBox);
+  cols.appendChild(adjBox);
 
-  const tl=el('div','cur');tl.innerHTML='<span class="mono">비슷한 색 허용</span>';
-  const ti=el('input');ti.type='range';ti.min=0;ti.max=90;ti.value=tol;ti.style.width='90px';
+  const tl=el('div','cur');tl.innerHTML='<span class="mono">비슷한 색</span>';
+  const ti=el('input');ti.type='range';ti.min=0;ti.max=90;ti.value=tol;ti.style.width='70px';
   const tv=el('span');tv.className='mono';tv.textContent=tol;ti.oninput=e=>{tol=+e.target.value;tv.textContent=tol};
-  tl.append(ti,tv);T.appendChild(tl);
-
-  const pw=el('div','pal');T.appendChild(pw);
+  tl.append(ti,tv);cols.appendChild(tl);
   const opts=el('div','cur');
-  const ob=el('button');ob.textContent='어니언스킨';ob.setAttribute('aria-pressed',String(onionOn));
-  ob.title='앞뒤 장을 비쳐 보여줍니다 — 앞은 파랗게, 뒤는 붉게. 움직임을 보며 손댈 때 씁니다';
+  const ob=el('button','ico');ob.textContent='👻';ob.setAttribute('aria-pressed',String(onionOn));
+  ob.title='어니언스킨 — 앞뒤 장을 비칩니다. 앞은 파랑, 뒤는 빨강';
   ob.onclick=()=>{onionOn=!onionOn;ob.setAttribute('aria-pressed',String(onionOn));
     const on=document.getElementById('onion');if(on)drawOnion(on);
     const mk=document.querySelector('.onionmark');
     if(onionOn&&!mk){const m=el('div','onionmark');m.textContent='앞뒤 '+onionN+'장 비침 — 파랑 앞 · 빨강 뒤';document.querySelector('.cw').appendChild(m)}
     if(!onionOn&&mk)mk.remove();
   };opts.appendChild(ob);
-  // 몇 장까지 비출지 — 빠른 이펙트는 한 장, 느린 것은 두세 장을 봐야 흐름이 보인다
   const onSel=el('select');onSel.id='onionn';
   onSel.title='앞뒤로 몇 장까지 비출지';
-  [1,2,3].forEach(n=>{const o=el('option');o.value=String(n);o.textContent='앞뒤 '+n+'장';onSel.appendChild(o)});
+  [1,2,3].forEach(n=>{const o=el('option');o.value=String(n);o.textContent=String(n);onSel.appendChild(o)});
   onSel.value=String(onionN);
   onSel.onchange=()=>{onionN=+onSel.value;
     const on=document.getElementById('onion');if(on)drawOnion(on);
     const mk=document.querySelector('.onionmark');
     if(mk)mk.textContent='앞뒤 '+onionN+'장 비침 — 파랑 앞 · 빨강 뒤'};
-  opts.appendChild(onSel);
-  const ub=el('button');ub.id='eu';ub.textContent='되돌리기';
+  cols.appendChild(onSel);
+  const ub=el('button','ico');ub.id='eu';ub.textContent='↶';ub.title='되돌리기 (Ctrl+Z)';
   ub.onclick=()=>{
-    // 편집기 안에서 눌러도 같은 역사를 되돌린다. 여기만 따로 돌면
-    // 툴바에서 되돌린 것과 어긋나서 어느 쪽이 진짜인지 알 수 없어진다.
     undo();
   };
-  const rb=el('button');rb.textContent='처음으로';rb.onclick=()=>{push();strokes=[];redraw()};
+  const rb=el('button','ico');rb.textContent='↺';rb.title='이 낱장 손질을 처음으로';rb.onclick=()=>{push();strokes=[];redraw()};
   opts.append(ub,rb);T.appendChild(opts);
 
   const ap=el('button','primary');ap.id='eapply';ap.textContent='적용하고 닫기';
   ap.onclick=()=>{
     const k=openEd.key, src=openEd.src, i=openEd.i;
-    push();                              // 적용도 되돌릴 수 있어야 한다
+    push();
     if(strokes.length)edits[k]=strokes.slice();else delete edits[k];
     openEd=null;mountedKey=null;
-    buildEdited(k,src,i,()=>render());   // 손질한 그림을 만든 뒤에 화면을 그린다
+    buildEdited(k,src,i,()=>render());
   };
-  T.appendChild(ap);
-  const hint=el('div','edhelp');hint.className='cap edhelp';hint.style.textAlign='left';
-  hint.style.display=showEdHelp?'':'none';
-  hint.innerHTML='손댄 자국은 좌표로 저장됩니다. 원본 gif 는 안 바뀝니다.<br>'
-    +'<b>휠</b> 확대·축소(커서 지점 기준) · <b>스페이스+끌기</b> 또는 <b>가운데 버튼</b> 으로 화면 밀기<br>'
-    +'<b>B</b> 연필 <b>E</b> 지우개 <b>I</b> 스포이드 <b>G</b> 페인트통 <b>V</b> 이동 · <b>[ ]</b> 붓 굵기<br>'
-    +'<b>Ctrl+Z</b> 되돌리기 · 그린 것은 닫아도 저장됩니다';
-  T.appendChild(hint);
-  main.appendChild(T);wrap.appendChild(main);
+  cols.appendChild(ap);
+  main.append(L,cw,T);wrap.appendChild(main);
+  wrap.appendChild(edTimeline());
 
   setTimeout(()=>{mount(cv,on,gr,pw);drawSel();updateSelLab();applyCursor()},0);
   return wrap;
+}
+function edTimeline(){
+  const bar=el('div','edtl');
+  const prev=el('div','edprev');prev.title='재생 미리보기';
+  const im=el('img');im.id='edprev';prev.appendChild(im);bar.appendChild(prev);
+  const ctr=el('div','edplay');
+  const mk=(t,tip,fn)=>{const b=el('button');b.textContent=t;b.title=tip;b.onclick=fn;ctr.appendChild(b);return b};
+  mk('⏮','첫 장',()=>{if(!seq.length)return;playing=false;clearTimeout(playT);playAt=0;showFrame(0)});
+  mk('◀','앞 장',()=>playStep(-1));
+  const pb=mk(playing?'⏸':'▶',playing?'멈춤':'재생',()=>{
+    playing=!playing;pb.textContent=playing?'⏸':'▶';pb.title=playing?'멈춤':'재생';
+    if(playing)play();else clearTimeout(playT)});
+  pb.id='edplaybtn';
+  mk('⏩','다음 장',()=>playStep(1));
+  mk('⏭','마지막 장',()=>{if(!seq.length)return;playing=false;clearTimeout(playT);playAt=seq.length-1;showFrame(playAt)});
+  bar.appendChild(ctr);
+  const cels=el('div','edcels');
+  seq.forEach((s,n)=>{
+    const b=el('div','edcel'+(openEd&&openEd.key===slotOwn(s)?' on':''));
+    b.title=(n+1)+'장 — 눌러서 이 장을 고칩니다';
+    const img=el('img');img.src=slotURL(s);b.appendChild(img);
+    const m=el('div','m');m.textContent=String(n+1);b.appendChild(m);
+    b.onclick=()=>openSeq(n);
+    cels.appendChild(b);
+  });
+  bar.appendChild(cels);
+  return bar;
 }
 /** 도구 바꾸기 — 단추와 단축키가 같은 자리를 쓴다. render() 를 부르면 캔버스가
     새로 붙어 그리던 게 끊기므로 단추 상태만 갈아끼운다. */
@@ -3160,8 +3288,8 @@ function autoZoom(){
   if(!base)return 4;
   // 어림값이 아니라 지금 그 칸의 실제 크기로 잰다. 가로만 보면 세로로 넘친다.
   const sc=document.querySelector('.ed .cw');
-  const rw=sc&&sc.clientWidth?sc.clientWidth-18:(edFull?innerWidth-400:460);
-  const rh=sc&&sc.clientHeight?sc.clientHeight-18:(edFull?innerHeight-190:460);
+  const rw=sc&&sc.clientWidth?sc.clientWidth-18:(edFull?innerWidth-220:460);
+  const rh=sc&&sc.clientHeight?sc.clientHeight-18:(edFull?innerHeight-140:460);
   return Math.max(1,Math.min(32,Math.floor(Math.min(rw/base.w,rh/base.h))));
 }
 /** 배율만 갈아끼운다 — render() 를 부르면 캔버스가 새로 붙어 그리던 게 끊긴다. */
@@ -3174,6 +3302,9 @@ function setZoom(z){
   const gr=document.getElementById('grid');if(gr)drawGrid(gr,z);
   drawSel();                       // 고른 테두리도 배율을 따라간다
   const lab=document.getElementById('zlab');if(lab)lab.textContent=z+'배';
+  const wrap=document.querySelector('.cwrap');
+  if(wrap){const s=Math.max(4,8*z);wrap.style.backgroundSize=s+'px '+s+'px';
+    wrap.style.backgroundPosition='0 0,'+(s/2)+'px '+(s/2)+'px'}
 }
 /**
  * 확대·축소하면서 «보던 자리» 를 붙잡는다.
@@ -3206,8 +3337,8 @@ function fitContent(){
   const box=contentBox()||{x:0,y:0,w:base.w,h:base.h};
   if(box.w<8||box.h<8){fitCanvas();return}
   const sc=document.querySelector('.ed .cw');
-  const rw=sc&&sc.clientWidth?sc.clientWidth-18:(edFull?innerWidth-400:460);
-  const rh=sc&&sc.clientHeight?sc.clientHeight-18:(edFull?innerHeight-190:460);
+  const rw=sc&&sc.clientWidth?sc.clientWidth-18:(edFull?innerWidth-220:460);
+  const rh=sc&&sc.clientHeight?sc.clientHeight-18:(edFull?innerHeight-140:460);
   const z=Math.max(1,Math.min(32,Math.floor(Math.min(rw/box.w,rh/box.h))));
   setZoom(z);
   if(sc){sc.scrollLeft=(box.x+box.w/2)*z-sc.clientWidth/2;sc.scrollTop=(box.y+box.h/2)*z-sc.clientHeight/2}
@@ -3242,6 +3373,11 @@ function setColor(hex){
   color=hex;
   const box=document.querySelector('.ed .cur .box');if(box)box.style.background=hex;
   const ci=document.querySelector('.ed .cur input[type=color]');if(ci)ci.value=hex;
+  const fg=document.getElementById('fgbox');if(fg)fg.style.background=hex;
+  const hues=document.getElementById('huesl'),sv=document.getElementById('svcan');
+  if(hues&&sv){const t=rgb2hsv.apply(null,hex2rgb(hex));
+    if(document.activeElement!==hues)hues.value=String(Math.round(t.h));
+    paintSV(sv,+hues.value)}
   document.querySelectorAll('.ed .pal .sw').forEach(o=>{
     o.classList.toggle('on',(o.style.background||'').replace(/\s/g,'')===hexToRgbCss(hex));
   });
@@ -3523,7 +3659,7 @@ function drawOnion(on){
 async function buildPal(pw){
   const r=await fetch('/api/palette?dir='+encodeURIComponent(cur.dir)+'&kind='+cur.kind+'&src='+openEd.src+'&i='+openEd.i);
   pal=await r.json();pw.innerHTML='';
-  pal.forEach(p=>{const b=el('button','sw'+(p.hex===color?' on':''));b.style.background=p.hex;b.title=p.hex+' · '+p.n+'px';
+  pal.slice(0,24).forEach(p=>{const b=el('button','sw'+(p.hex===color?' on':''));b.style.background=p.hex;b.title=p.hex+' · '+p.n+'px';
     b.onclick=()=>{setColor(p.hex)};pw.appendChild(b)});
 }
 const hex2rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];

@@ -781,6 +781,16 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .edprev img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block}
   .edplay{display:flex;flex-direction:column;justify-content:center;gap:2px;flex:0 0 auto}
   .edcels{display:flex;flex-wrap:wrap;gap:4px;align-content:flex-start;flex:1;min-width:0;overflow-y:auto;max-height:120px}
+  .edtl-side{display:flex;flex-direction:column;justify-content:center;gap:4px;flex:0 0 196px;min-width:196px}
+  .edtl-side .primary{width:100%;padding:8px 10px;font-size:14px;border-radius:8px}
+  .edpub{font-size:11px;line-height:1.35;font-weight:700;min-height:1.4em}
+  .edpubhint{font-size:10px;line-height:1.35;font-weight:600;color:var(--muted);min-height:2.6em}
+  .pubmeter{height:8px;background:#8a8a8a;border-radius:4px;overflow:hidden}
+  .pubmeter>i{display:block;height:100%;width:0;background:var(--accent);transition:width .4s linear}
+  .pubmeter.wait>i{background:#c9a227}
+  .pubmeter.run>i{background:var(--accent)}
+  .pubmeter.ok>i{background:#166534;width:100%}
+  .pubmeter.err>i{background:var(--drop);width:100%}
   .edcel{width:56px;padding:2px;border:2px solid var(--line);border-radius:6px;background:var(--cell);cursor:pointer;flex:0 0 auto}
   .edcel img{width:52px;height:52px;object-fit:contain;image-rendering:pixelated;display:block;border-radius:3px}
   .edcel .m{font-size:9px;text-align:center;color:var(--muted);line-height:1.2}
@@ -1227,7 +1237,7 @@ function render(){
   rd2.onclick=redo;b.appendChild(rd2);
   // 단추는 「저장」 하나다. 올리는 건 손을 놓으면 알아서 한 번에 나간다 —
   // 아래 상태줄(#pubbar)이 언제 나가는지 말해 주고, 거기서 앞당기거나 미룰 수 있다.
-  const sv=el('button','primary');sv.textContent='저장';sv.disabled=!seq.length;sv.onclick=save;b.appendChild(sv);
+  const sv=el('button','primary');sv.id='savebtn';sv.textContent='저장';sv.disabled=!seq.length;sv.onclick=save;b.appendChild(sv);
   // 저장 «전에» 화면과 굽는 것이 같은지 재 본다. 파일은 안 건드린다.
   const dry=el('button');dry.id='drybtn';dry.textContent='굽기 확인';dry.disabled=!seq.length;
   dry.title='저장했을 때 나올 그림을 지금 화면과 한 점씩 맞대 봅니다 (파일은 안 건드립니다)';
@@ -1959,9 +1969,8 @@ async function save(){
   stampUids();
   // 무슨 일이 일어났는지 «누른 자리에서» 보여야 한다. 알림을 화면 맨 아래에만 붙이면
   // 스크롤 밖이라 못 본다(2026-08-25 원장님: "저장 누르면 뭐가 됐는지 알 수가 없다").
-  const sv=[...document.querySelectorAll('#bar button')].find(b=>b.textContent==='저장');
-  const svOld=sv?sv.textContent:'';
-  if(sv){sv.disabled=true;sv.textContent='저장 중…'}
+  const svs=[...document.querySelectorAll('#savebtn,#edsave')];
+  svs.forEach(b=>{b.disabled=true;b.textContent='저장 중…'});
   toast('저장하는 중…');
   const steps=recipeSteps();
   const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -1970,10 +1979,10 @@ async function save(){
   const m=el('div','msg '+(j.ok?'ok':'err'));
   m.innerHTML=j.ok?'저장했습니다 — '+j.frames+'장 · 한 바퀴 '+j.loop_ms+'ms<br>옛 판은 재료 줄에 「저장본」 으로 남습니다. 아이들 화면까지는 아래 줄이 알아서 보냅니다.':'실패: '+j.error;
   beat();
-  if(sv){sv.disabled=false;sv.textContent=svOld}
+  svs.forEach(b=>{b.disabled=!seq.length;b.textContent='저장'});
   toast(j.ok?('저장했습니다 — '+j.frames+'장 · 한 바퀴 '+j.loop_ms+'ms'):('저장 실패 — '+(j.error||'')),j.ok?'ok':'err');
   $('#work').appendChild(m);m.scrollIntoView({behavior:'smooth',block:'nearest'});
-  if(j.ok){const n=document.querySelector('.it.on');if(n&&!n.querySelector('.done')){const d=el('span','done');d.textContent='●';n.appendChild(d)}}
+  if(j.ok){const n=document.querySelector('.it.on');if(n&&!n.querySelector('.done')){const d=el('span','done');d.textContent='●';n.appendChild(d)}beat()}
 }
 
 /**
@@ -1994,41 +2003,64 @@ function toast(text,tone){
 }
 function pubBar(){
   setTimeout(beat,0);
-  const d=el('div','msg');d.id='pubbar';d.style.display='flex';d.style.alignItems='center';d.style.gap='10px';
+  const d=el('div','msg');d.id='pubbar';d.style.display='flex';d.style.alignItems='center';d.style.gap='10px';d.style.flexWrap='wrap';
   const t=el('span');t.id='pubtext';t.textContent='…';d.appendChild(t);
-  const sp=el('span');sp.style.flex='1';d.appendChild(sp);
-  const now=el('button');now.textContent='지금 올리기';now.onclick=async()=>{
-    now.disabled=true;const t=document.getElementById('pubtext');if(t)t.textContent='올리는 중… (1~2분)';
-    try{await fetch('/api/publish-now',{method:'POST'})}catch(e){}
-    now.disabled=false;beat();};
+  const meter=el('div','pubmeter');meter.id='pubmeter';meter.style.flex='1';meter.style.minWidth='80px';
+  const fill=el('i');meter.appendChild(fill);d.appendChild(meter);
+  const now=el('button');now.textContent='지금 올리기';now.onclick=()=>publishNow();
   const hold=el('button');hold.textContent='이번엔 안 보내기';hold.onclick=async()=>{
     try{await fetch('/api/hold',{method:'POST'})}catch(e){}beat();};
   now.id='pubnow';hold.id='pubhold';
   d.append(now,hold);
   return d;
 }
+let lastPub=null,lastPubAt=0;
+const PUB_WAIT=180;
+function pubLeft(){
+  if(!lastPub)return 0;
+  if(!(lastPub.secondsLeft>0))return lastPub.secondsLeft||0;
+  return Math.max(0,lastPub.secondsLeft-Math.round((Date.now()-lastPubAt)/1000));
+}
+function paintPub(){
+  if(!lastPub)return;
+  const j=lastPub, left=pubLeft();
+  const mm=Math.floor(left/60), ss=('0'+(left%60)).slice(-2);
+  const line=j.publishing?'올리는 중… (푸시·배포, 1~2분)'
+    :j.state==='failed'?(j.message+' — 「지금 올리기」로 다시')
+    :left>0?('3분 대기 '+mm+':'+ss+' 남음')
+    :j.n===0?(j.state==='done'?(j.message||'다 올렸습니다'):'올릴 것이 없습니다')
+    :j.state==='held'?('안 올린 것 '+j.n+'개 · 이번엔 안 보냅니다')
+    :('안 올린 것 '+j.n+'개 · 저장하면 3분 뒤 올라갑니다');
+  const hint=j.publishing?'창을 닫거나 컴퓨터를 끄지 마세요. 올리다 끊기면 보스전에 안 나갑니다.'
+    :left>0?'고쳐도 됩니다. 저장하면 3분이 다시 시작합니다. 이 편집기 창은 끄지 마세요.'
+    :'';
+  const t=document.getElementById('pubtext'), t2=document.getElementById('edpubtext');
+  if(t)t.textContent=line; if(t2)t2.textContent=line;
+  const h=document.getElementById('edpubhint');if(h)h.textContent=hint;
+  const bar=document.getElementById('pubbar');
+  if(bar){bar.classList.remove('ok','err');if(j.state==='failed')bar.classList.add('err');if(j.state==='done'&&j.n===0)bar.classList.add('ok')}
+  const busy=j.publishing||j.n>0;
+  ['pubnow','edpubnow'].forEach(id=>{const n=document.getElementById(id);if(n)n.style.display=busy?'':'none'});
+  const hold=document.getElementById('pubhold');
+  if(hold)hold.style.display=(j.n>0&&!j.publishing&&j.state!=='held')?'':'none';
+  const cls=j.publishing?'run':j.state==='failed'?'err':(j.state==='done'&&j.n===0)?'ok':(left>0?'wait':'');
+  const pct=j.publishing?100:(j.state==='failed'||(j.state==='done'&&j.n===0))?100:(left>0?Math.max(2,Math.round(100*(1-left/PUB_WAIT))):0);
+  ['pubmeter','edmeter'].forEach(id=>{
+    const m=document.getElementById(id);if(!m)return;
+    m.className='pubmeter'+(cls?' '+cls:'');
+    const i=m.querySelector('i');if(i)i.style.width=pct+'%';
+  });
+}
 /** 서버에 지금 상태를 묻는다. 이 부름이 «화면이 열려 있다» 는 신호도 된다 —
     탭을 닫으면 신호가 끊기고 편집기가 스스로 꺼진다. */
 async function beat(){
   let j;
   try{ j=await (await fetch('/api/beat')).json() }catch(e){ return }
-  const t=document.getElementById('pubtext');if(!t)return;
-  const bar=document.getElementById('pubbar');
-  // 올릴 게 없으면 단추를 숨긴다. 늘 떠 있으면 무엇을 눌러야 하는지 알 수 없다.
-  const now=document.getElementById('pubnow'), hold=document.getElementById('pubhold');
-  const busy=j.publishing||j.n>0;
-  if(now)now.style.display=busy?'':'none';
-  if(hold)hold.style.display=(j.n>0&&!j.publishing&&j.state!=='held')?'':'none';
-  bar.classList.remove('ok','err');
-  if(j.publishing){ t.textContent='올리는 중… (1~2분)'; }
-  else if(j.state==='failed'){ bar.classList.add('err'); t.innerHTML='<b>'+j.message+'</b> — 「지금 올리기」로 다시 해보세요'; }
-  else if(j.n===0){ t.textContent=j.state==='done'?(j.message||'다 올렸습니다'):'올릴 것이 없습니다'; if(j.state==='done')bar.classList.add('ok'); }
-  else if(j.state==='held'){ t.textContent='안 올린 것 '+j.n+'개 · 이번엔 안 보냅니다 (다음 저장 때 다시 준비)'; }
-  else if(j.secondsLeft>0){ const m=Math.floor(j.secondsLeft/60),sec=j.secondsLeft%60;
-    t.textContent='안 올린 것 '+j.n+'개 · '+(m?m+'분 ':'')+sec+'초 뒤 자동으로 올라갑니다'; }
-  else { t.textContent='안 올린 것 '+j.n+'개 · 저장하면 3분 뒤 자동으로 올라갑니다'; }
+  lastPub=j; lastPubAt=Date.now();
+  paintPub();
 }
 setInterval(beat,3000);
+setInterval(()=>{if(lastPub&&lastPub.secondsLeft>0)paintPub()},1000);
 
 /** 「지금 올리기」 — 서버가 쥐고 있는 그 타이머를 그냥 당겨 실행한다. */
 async function publishNow(){
@@ -3265,6 +3297,18 @@ function edTimeline(){
     cels.appendChild(b);
   });
   bar.appendChild(cels);
+  const side=el('div','edtl-side');
+  const st=el('div','edpub');st.id='edpubtext';st.textContent='…';
+  const meter=el('div','pubmeter');meter.id='edmeter';const fill=el('i');meter.appendChild(fill);
+  const hint=el('div','edpubhint');hint.id='edpubhint';
+  const sv=el('button','primary');sv.id='edsave';sv.textContent='저장';sv.disabled=!seq.length;
+  sv.title='이 PC에 저장합니다. 손을 놓으면 3분 뒤 보스전까지 올라갑니다.';
+  sv.onclick=save;
+  const now=el('button');now.id='edpubnow';now.textContent='지금 올리기';now.style.display='none';
+  now.title='3분을 기다리지 않고 지금 보스전에 반영합니다';
+  now.onclick=()=>publishNow();
+  side.append(st,meter,hint,sv,now);
+  bar.appendChild(side);
   return bar;
 }
 /** 도구 바꾸기 — 단추와 단축키가 같은 자리를 쓴다. render() 를 부르면 캔버스가

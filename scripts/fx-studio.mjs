@@ -586,7 +586,9 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
 <title>연출 편집기</title>
 <style>
   :root{--ground:#F3F4F6;--surface:#fff;--line:#DEE0E6;--ink:#171821;--muted:#666A78;
-    --accent:#3B4CC0;--old:#5B6270;--drop:#A03030;--cell:#22242C;--cell2:#2B2E37}
+    --accent:#3B4CC0;--old:#5B6270;--drop:#A03030;--cell:#22242C;--cell2:#2B2E37;
+    --chk-a:#c0c0c0;--chk-b:#808080}
+  body[data-chk=black]{--chk-a:#111;--chk-b:#3a3a3a}
   @media (prefers-color-scheme:dark){:root{--ground:#101117;--surface:#191B22;--line:#292C36;
     --ink:#E9EAF2;--muted:#969AAA;--accent:#8FA0FF;--old:#98A0B4;--drop:#F08A8A;--cell:#0A0B0F;--cell2:#131520}}
   *{box-sizing:border-box}
@@ -596,10 +598,10 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   aside{border-right:1px solid var(--line);overflow-y:auto;background:var(--surface)}
   aside h1{margin:0;padding:13px 15px 9px;font-size:15px;font-weight:800;border-bottom:1px solid var(--line)}
   .sp{padding:9px 12px 7px;border-bottom:1px solid color-mix(in srgb,var(--line) 45%,transparent)}
-  .spn{font-size:12px;font-weight:800;letter-spacing:.02em;margin-bottom:5px}
-  .spk{display:flex;flex-wrap:wrap;gap:4px}
-  .spk .it{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:7px;
-    border:1px solid var(--line);font-size:11px;font-weight:700;cursor:pointer;background:var(--ground)}
+  .spn{font-size:14px;font-weight:800;letter-spacing:.02em;margin-bottom:6px}
+  .spk{display:flex;flex-wrap:wrap;gap:5px}
+  .spk .it{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:7px;
+    border:1px solid var(--line);font-size:13px;font-weight:700;cursor:pointer;background:var(--ground)}
   .spk .it:hover{border-color:var(--accent)}
   .spk .it.on{background:color-mix(in srgb,var(--accent) 18%,transparent);border-color:var(--accent);font-weight:800}
   .spk .it .done{color:var(--accent);font-size:9px}
@@ -616,20 +618,20 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .row{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px;display:flex;gap:11px;align-items:flex-start}
   .row.seq{border-color:color-mix(in srgb,var(--accent) 40%,transparent);background:color-mix(in srgb,var(--accent) 6%,transparent)}
   .stage{width:calc(96px * var(--z,1));height:calc(96px * var(--z,1));flex:0 0 auto;border-radius:9px;border:1px solid var(--line);overflow:hidden;
-    background-color:var(--cell);background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
-    linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:16px 16px;background-position:0 0,8px 8px}
+    background-color:var(--chk-a);background-image:linear-gradient(45deg,var(--chk-b) 25%,transparent 25%,transparent 75%,var(--chk-b) 75%),
+    linear-gradient(45deg,var(--chk-b) 25%,transparent 25%,transparent 75%,var(--chk-b) 75%);background-size:16px 16px;background-position:0 0,8px 8px}
   .stage img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block}
   .thumb img{image-rendering:pixelated;display:block;border:0}
-  .fr > img{width:calc(66px * var(--z,1));height:calc(66px * var(--z,1));object-fit:contain;image-rendering:pixelated;display:block;border-radius:5px;
-    background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
-    linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:12px 12px;background-position:0 0,6px 6px}
+  .fr > img,.slot > img{width:calc(66px * var(--z,1));height:calc(66px * var(--z,1));object-fit:contain;image-rendering:pixelated;display:block;border-radius:5px;
+    background-color:var(--chk-a);background-image:linear-gradient(45deg,var(--chk-b) 25%,transparent 25%,transparent 75%,var(--chk-b) 75%),
+    linear-gradient(45deg,var(--chk-b) 25%,transparent 25%,transparent 75%,var(--chk-b) 75%);background-size:12px 12px;background-position:0 0,6px 6px}
   .thumb{width:calc(66px * var(--z,1));height:calc(66px * var(--z,1));overflow:hidden;border-radius:5px;flex:0 0 auto;
-    background-color:var(--cell);background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
-    linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:12px 12px;background-position:0 0,6px 6px}
+    background-color:var(--chk-a);background-image:linear-gradient(45deg,var(--chk-b) 25%,transparent 25%,transparent 75%,var(--chk-b) 75%),
+    linear-gradient(45deg,var(--chk-b) 25%,transparent 25%,transparent 75%,var(--chk-b) 75%);background-size:12px 12px;background-position:0 0,6px 6px}
   .thumb.sm{width:44px;height:44px;background-size:10px 10px;background-position:0 0,5px 5px}
   .cap{font-size:11px;color:var(--muted);text-align:center;margin-top:3px}
   .strip{display:flex;gap:6px;overflow-x:auto;flex:1;padding-bottom:4px;min-height:60px}
-  .fr,.slot{position:relative;flex:0 0 auto;padding:3px;border-radius:9px;border:2px solid var(--line);background:var(--cell);cursor:pointer}
+  .fr,.slot{position:relative;flex:0 0 auto;padding:3px;border-radius:9px;border:2px solid var(--line);background:var(--chk-a);cursor:pointer}
   .fr .m,.slot .m{font-size:9.5px;color:var(--muted);text-align:center;font-family:ui-monospace,Consolas,monospace}
   .fr.blank{border-style:dashed}.fr.blank .m{color:var(--drop);font-weight:800}
   .fr.edited{box-shadow:0 0 0 2px color-mix(in srgb,var(--drop) 60%,transparent) inset}
@@ -666,10 +668,10 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .row.pick .cap{margin:0;flex-basis:100%;text-align:left}
   .row.foreign{opacity:.95}
   .row.foreign .fr{border-style:dotted}
-  body[data-bg=dark] .stage,body[data-bg=dark] .thumb,body[data-bg=dark] .fr>img,body[data-bg=dark] .cwrap{background-image:none;background-color:#0A0B0F}
-  body[data-bg=light] .stage,body[data-bg=light] .thumb,body[data-bg=light] .fr>img,body[data-bg=light] .cwrap{background-image:none;background-color:#fff}
-  body[data-bg=grey] .stage,body[data-bg=grey] .thumb,body[data-bg=grey] .fr>img,body[data-bg=grey] .cwrap{background-image:none;background-color:#8A8F9A}
-  body[data-bg=none] .stage,body[data-bg=none] .thumb,body[data-bg=none] .fr>img,body[data-bg=none] .cwrap{background-image:none;background-color:transparent}
+  body[data-bg=dark] .stage,body[data-bg=dark] .thumb,body[data-bg=dark] .fr>img,body[data-bg=dark] .slot>img,body[data-bg=dark] .cwrap{background-image:none;background-color:#0A0B0F}
+  body[data-bg=light] .stage,body[data-bg=light] .thumb,body[data-bg=light] .fr>img,body[data-bg=light] .slot>img,body[data-bg=light] .cwrap{background-image:none;background-color:#fff}
+  body[data-bg=grey] .stage,body[data-bg=grey] .thumb,body[data-bg=grey] .fr>img,body[data-bg=grey] .slot>img,body[data-bg=grey] .cwrap{background-image:none;background-color:#8A8F9A}
+  body[data-bg=none] .stage,body[data-bg=none] .thumb,body[data-bg=none] .fr>img,body[data-bg=none] .slot>img,body[data-bg=none] .cwrap{background-image:none;background-color:transparent}
 
   /* ── 게임 화면 미리보기 ──
      게임은 FX 를 캐릭터 위에 얹고, 선생님 화면에서는 screen 합성으로 그린다.
@@ -694,29 +696,31 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   /* ── 큰 편집기 — 아세프라이트 자리: 위 도구줄 · 왼 팔레트 · 가운데 칸 · 오른 도구 · 아래 장 ── */
   .ed{background:var(--surface);border:2px solid var(--accent);border-radius:14px;padding:0;display:flex;flex-direction:column;gap:0;overflow:hidden}
   .ed.full{position:fixed;inset:0;z-index:60;overflow:hidden;border-radius:0;border:0;box-shadow:none}
-  .ed h2 button{font-size:12px;padding:3px 7px}
-  .ed h2{margin:0;font-size:13px;font-weight:800;display:flex;align-items:center;gap:5px;flex:0 0 auto;flex-wrap:wrap;
-    padding:4px 8px;border-bottom:1px solid var(--line);background:var(--surface)}
+  .ed h2 button{font-size:14px;padding:6px 11px}
+  .ed h2{margin:0;font-size:15px;font-weight:800;display:flex;align-items:center;gap:6px;flex:0 0 auto;flex-wrap:wrap;
+    padding:6px 10px;border-bottom:1px solid var(--line);background:var(--surface)}
   .ed h2 .mono{font-weight:600;font-size:12px;color:var(--muted)}
   .ed .close{margin-left:auto}
   .edmain{display:flex;gap:0;align-items:stretch;flex:1;min-height:0}
-  .palrail{width:188px;min-width:188px;overflow:hidden;padding:0;display:flex;flex-direction:column;
+  .palrail{width:248px;min-width:248px;overflow:hidden;padding:0;display:flex;flex-direction:column;
     background:var(--surface);border-right:1px solid var(--line);flex:0 0 auto}
   .edchars{flex:1;min-height:0;overflow-y:auto;border-bottom:1px solid var(--line)}
-  .edchars .sp{padding:6px 8px 5px}
-  .edcols{flex:1;min-height:0;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:5px}
+  .edchars .sp{padding:8px 10px 7px}
+  .edcols{flex:1;min-height:0;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:6px}
   .palrail .cur{flex-wrap:wrap;gap:4px}
   .palrail input[type=range]{width:70px}
-  .hsvpick{display:flex;flex-direction:column;gap:3px}
-  .hsvpick canvas{width:100%;max-width:172px;height:56px;cursor:crosshair;border:1px solid #333;display:block}
-  .hsvpick .huesl{width:100%}
-  .fgbox{width:28px;height:28px;border:2px solid #222;flex:0 0 auto;cursor:pointer}
+  .hsvpick{display:flex;flex-direction:row;gap:4px;align-items:flex-start}
+  .hsvpick #svcan{width:108px;height:90px;cursor:crosshair;border:1px solid #404040;display:block;flex:0 0 auto}
+  .hsvpick #huecan{width:14px;height:90px;cursor:ns-resize;border:1px solid #404040;display:block;flex:0 0 auto}
+  .fgbg{position:relative;width:42px;height:42px;flex:0 0 auto;margin-top:2px}
+  .fgbox{position:absolute;left:0;top:0;width:24px;height:24px;border:1px solid #111;z-index:1;cursor:pointer;box-shadow:1px 1px 0 #fff}
+  .bgbox{position:absolute;left:14px;top:14px;width:24px;height:24px;border:1px solid #111;background:#000;cursor:default}
   .cw{flex:1;min-width:0;min-height:0;border-radius:0;padding:0;position:relative;background:#6e6274;
     overflow:auto;max-width:none;display:flex;align-items:safe center;justify-content:safe center}
   .ed.full .cw{max-height:none}
-  .cwrap{position:relative;width:max-content;height:max-content;background-color:#c0c0c0;
-    background-image:linear-gradient(45deg,#808080 25%,transparent 25%,transparent 75%,#808080 75%),
-    linear-gradient(45deg,#808080 25%,transparent 25%,transparent 75%,#808080 75%);background-size:16px 16px;background-position:0 0,8px 8px}
+  .cwrap{position:relative;width:max-content;height:max-content;background-color:var(--chk-a);
+    background-image:linear-gradient(45deg,var(--chk-b) 25%,transparent 25%,transparent 75%,var(--chk-b) 75%),
+    linear-gradient(45deg,var(--chk-b) 25%,transparent 25%,transparent 75%,var(--chk-b) 75%);background-size:16px 16px;background-position:0 0,8px 8px}
   /* 캔버스에서 끌 때 옆 글자가 딸려 잡히면 Ctrl+C 가 «글자 복사» 로 새 버린다 — 아예 막는다 */
   .ed,#cv{user-select:none;-webkit-user-select:none}
   #cv{image-rendering:pixelated;cursor:crosshair;touch-action:none;border-radius:4px;display:block}
@@ -762,23 +766,25 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
     color:var(--ink)}
   .tlcel.off{opacity:.4}
   .tlcel:hover{border-color:var(--accent)}
-  .tools{display:flex;flex-direction:column;gap:3px;width:52px;min-width:52px;max-width:52px;flex:0 0 auto;
-    overflow-y:auto;padding:3px 2px;background:var(--surface);border-left:1px solid var(--line)}
+  .tools{display:flex;flex-direction:column;gap:4px;width:76px;min-width:76px;max-width:76px;flex:0 0 auto;
+    overflow-y:auto;padding:4px 3px;background:var(--surface);border-left:1px solid var(--line)}
   .tools .cap{white-space:normal;word-break:keep-all;line-height:1.45;font-size:11px}
   .tools button{white-space:nowrap}
-  .tgrid{display:grid;grid-template-columns:1fr 1fr;gap:1px}
-  .tgrid button,.tools .ico,.edplay button{width:22px;height:22px;padding:0;font-size:11px;line-height:1;border-radius:0;
+  .tgrid{display:grid;grid-template-columns:1fr 1fr;gap:2px}
+  .tgrid button,.tools .ico{width:32px;height:32px;padding:0;font-size:14px;line-height:1;border-radius:0;
     display:inline-flex;align-items:center;justify-content:center}
-  .tgrid button svg,.tools .ico svg{display:block;pointer-events:none}
-  .tools .cur{flex-wrap:wrap;gap:1px}
-  .tools .cur button.ico{width:22px;height:22px;padding:0;min-width:22px}
-  .pal{display:flex;flex-wrap:wrap;gap:0;max-width:120px}
+  .edplay button{width:26px;height:26px;padding:0;font-size:12px;line-height:1;border-radius:0;
+    display:inline-flex;align-items:center;justify-content:center}
+  .tgrid button svg,.tools .ico svg{display:block;pointer-events:none;width:22px;height:22px}
+  .tools .cur{flex-wrap:wrap;gap:2px}
+  .tools .cur button.ico{width:32px;height:32px;padding:0;min-width:32px}
+  .pal{display:flex;flex-wrap:wrap;gap:0;max-width:128px}
   .edtl{display:flex;align-items:stretch;gap:8px;flex:0 0 auto;padding:6px 8px;
     background:var(--surface);border-top:1px solid var(--line)}
-  .edprev{width:84px;height:84px;flex:0 0 auto;border:1px solid var(--line);border-radius:6px;overflow:hidden;
-    background-color:#c0c0c0;background-image:linear-gradient(45deg,#808080 25%,transparent 25%,transparent 75%,#808080 75%),
-    linear-gradient(45deg,#808080 25%,transparent 25%,transparent 75%,#808080 75%);background-size:12px 12px;background-position:0 0,6px 6px}
-  .edprev img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block}
+  .edprev,.edcel{width:84px;height:84px;flex:0 0 auto;position:relative;padding:0;border:2px solid var(--line);border-radius:6px;overflow:hidden;cursor:pointer;
+    background-color:var(--chk-a);background-image:linear-gradient(45deg,var(--chk-b) 25%,transparent 25%,transparent 75%,var(--chk-b) 75%),
+    linear-gradient(45deg,var(--chk-b) 25%,transparent 25%,transparent 75%,var(--chk-b) 75%);background-size:12px 12px;background-position:0 0,6px 6px}
+  .edprev img,.edcel img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block;border-radius:0}
   .edplay{display:flex;flex-direction:column;justify-content:center;gap:2px;flex:0 0 auto}
   .edcels{display:flex;flex-wrap:wrap;gap:4px;align-content:flex-start;flex:1;min-width:0;overflow-y:auto;max-height:120px}
   .edtl-side{display:flex;flex-direction:column;justify-content:center;gap:4px;flex:0 0 196px;min-width:196px}
@@ -791,18 +797,28 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .pubmeter.run>i{background:var(--accent)}
   .pubmeter.ok>i{background:#166534;width:100%}
   .pubmeter.err>i{background:var(--drop);width:100%}
-  .edcel{width:56px;padding:2px;border:2px solid var(--line);border-radius:6px;background:var(--cell);cursor:pointer;flex:0 0 auto}
-  .edcel img{width:52px;height:52px;object-fit:contain;image-rendering:pixelated;display:block;border-radius:3px}
-  .edcel .m{font-size:9px;text-align:center;color:var(--muted);line-height:1.2}
+  .edcel .m{position:absolute;left:0;right:0;bottom:1px;font-size:10px;text-align:center;color:#fff;text-shadow:0 0 3px #000,0 1px 0 #000;line-height:1.2;font-weight:800}
   .edcel.on{border-color:var(--accent)}
   .edcel.now{box-shadow:0 0 0 2px #ffd34d}
-  .sw{width:12px;height:12px;border-radius:0;border:1px solid #666;cursor:pointer;padding:0}
-  .ed.full{background:#bdbdbd}
-  .ed.full h2,.ed.full .palrail,.ed.full .tools,.ed.full .edtl{background:#c8c8c8;color:#111;border-color:#8a8a8a}
+  .sw{width:10px;height:10px;border-radius:0;border:1px solid #555;cursor:pointer;padding:0;box-sizing:border-box}
+  .sw.on{outline:1px solid #fff;outline-offset:-2px;border-color:#000}
+  .ed.full{background:#808080;font-family:Tahoma,"Segoe UI",sans-serif;font-size:11px;font-weight:400}
+  .ed.full h2,.ed.full .palrail,.ed.full .tools,.ed.full .edtl{background:#c0c0c0;color:#000;border-color:#808080}
+  .ed.full h2{font-size:11px;font-weight:400;padding:3px 6px;gap:4px;
+    border-bottom:1px solid #808080;box-shadow:inset 0 1px 0 #fff}
   .ed.full h2 button,.ed.full .tools button,.ed.full .edplay button,.ed.full .palrail button{
-    background:#c8c8c8;border:1px solid #eee;border-right-color:#555;border-bottom-color:#555;border-radius:0;color:#111}
-  .ed.full .tools button[aria-pressed=true],.ed.full h2 button[aria-pressed=true]{background:#a8c4ff;border-color:#333;color:#111}
-  .sw.on{border-color:var(--accent);transform:scale(1.12)}
+    background:#c0c0c0;border:1px solid #fff;border-right-color:#404040;border-bottom-color:#404040;
+    border-radius:0;color:#000;font-size:11px;font-weight:400;padding:3px 8px;box-shadow:none}
+  .ed.full .tgrid button,.ed.full .tools .ico{padding:0}
+  .ed.full .tools button[aria-pressed=true],.ed.full h2 button[aria-pressed=true]{
+    background:#a0b8e0;border-color:#404040;border-right-color:#fff;border-bottom-color:#fff;color:#000}
+  .ed.full .edtl{border-top:1px solid #fff;box-shadow:inset 0 1px 0 #808080}
+  .ed.full .palrail{border-right:1px solid #808080;box-shadow:1px 0 0 #fff}
+  .ed.full .tools{border-left:1px solid #fff;box-shadow:inset 1px 0 0 #808080}
+  .ed.full .cw{background:#6b5d6e}
+  .ed.full .edchars .spn,.ed.full .edpub,.ed.full .mono{color:#000}
+  .ed.full .edpubhint{color:#404040}
+  .ed.full .edtl-side .primary{background:#c0c0c0;color:#000;border:1px solid #fff;border-right-color:#404040;border-bottom-color:#404040;border-radius:0}
   .cur{display:flex;align-items:center;gap:7px;font-size:12px}
   .cur .box{width:26px;height:26px;border-radius:6px;border:1px solid var(--line)}
   button.pub{background:#166534;border-color:#166534;color:#fff}
@@ -1140,12 +1156,14 @@ async function boot(){
     const hit=items.find(it=>it.id===want);
     if(hit){
       load(hit);
-      const node=[...L.querySelectorAll('.it')].find(n=>n.dataset.id===want);
+      const node=[...document.querySelectorAll('#list .it')].find(n=>n.dataset.id===want);
       if(node)node.scrollIntoView({block:'center'});
     }else{
       // 조용히 첫 항목을 열면 원장님은 엉뚱한 종을 고친 줄도 모른다.
       alert('그 항목이 없습니다: '+want+'\\n아직 굽지 않았거나 폴더 이름이 다릅니다.');
     }
+  }else if(items.length){
+    load(items[0]);
   }
 }
 async function load(it){
@@ -1171,6 +1189,8 @@ async function load(it){
   else seq=meta.old.fills.map((_,i)=>({src:'old',i,uid:newUid()}));
   undoStack=[];redoStack=[];                     // 다른 종의 순서로 되돌아가면 안 된다
   Object.keys(editedCache).forEach(k=>delete editedCache[k]);
+  stampUids();
+  if(seq.length){openEd={src:seq[0].src,i:seq[0].i,key:slotOwn(seq[0])};mountedKey=null;edFull=true;playAt=0}
   rebuildEdited(()=>render());
 }
 let reFixing=false;   // 미리보기를 다시 굽는 중 — 여기서 맴돌지 않게
@@ -1376,6 +1396,9 @@ function dupSlot(s){
 function openSeq(n){
   const s=seq[n];if(!s)return;
   playAt=n;
+  const sc=document.querySelector('.ed .cw');
+  if(sc)edScroll={l:sc.scrollLeft,t:sc.scrollTop};
+  if(base&&base.z>0)edZoom=base.z;
   const c=commitStrokes();openEd={src:s.src,i:s.i,key:slotOwn(s)};mountedKey=null;
   const go=()=>render();
   if(c)buildEdited(c.key,c.src,c.i,go,c.blank?{w:c.w,h:c.h}:null);else go();
@@ -1384,13 +1407,12 @@ function seqRow(){
   const row=el('div','row seq');
   const box=el('div');const st=el('div','stage');const im=el('img');im.id='seqimg';st.appendChild(im);box.appendChild(st);
   const c=el('div','cap');c.textContent='만든 것 '+seq.length+'장';box.appendChild(c);row.appendChild(box);
-  fitThumb(im);
   const sp=el('div','strip');sp.id='seqstrip';
   seq.forEach((s,n)=>{
     const b=el('div','slot'+(s.src==='old'?' old':'')+(slotEdits(s).length?' edited':'')
       +(openEd&&openEd.key===slotOwn(s)?' sel':''));
     b.draggable=true;b.dataset.n=n;b.title='눌러서 이 낱장 편집 · 낱장을 여기로 끌어다 놓으면 위에 얹습니다';
-    b.appendChild(pix(slotURL(s)));
+    const img=el('img');img.src=slotURL(s);b.appendChild(img);
     const m=el('div','m');m.textContent=shortSrc(s.src)+'·'+s.i;b.appendChild(m);
     if(s.over&&s.over.length){
       const lg=el('div','lay');lg.textContent='층 '+nLayers(s);
@@ -1898,7 +1920,7 @@ function playStep(d){
 function showFrame(k){
   const im=$('#seqimg'),gm=$('#gamefx'),ep=$('#edprev');
   const u=slotURL(seq[k]);
-  if(im){im.src=u;fitThumb(im)}if(gm)gm.src=u;if(ep)ep.src=u;
+  if(im)im.src=u;if(gm)gm.src=u;if(ep)ep.src=u;
   markPlayhead(k);
 }
 function play(){
@@ -2166,7 +2188,7 @@ addEventListener('keyup',e=>{
 // 편집은 전용 작업대에서 한다(Aseprite·Canva 와 같다). 예전 기본이던 «창 모드» 는
 // 그림 칸과 도구 칸이 한 줄에 안 들어가면 도구가 그림 «아래» 로 접혀서, 8배만 넘겨도
 // 도구가 화면 밖(실측 y=1648, 창 높이 905)으로 사라졌다. 「창으로」 는 남겨 둔다.
-let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[],edZoom=0,edFull=true,mountedKey=null,spaceDown=false;
+let tool='pencil',color='#ffffff',brush=2,tol=20,onionOn=false,strokes=[],base=null,pal=[],edZoom=0,edFull=true,mountedKey=null,spaceDown=false,edScroll=null,chk='gray';
 
 // ── 도구마다 다른 손 모양 ────────────────────────────────────────────────
 // 도구는 글쇠로도 바뀌니(b·e·i·g·v) 지금 무엇을 들었는지 단추 색만으로는 놓치기 쉽다.
@@ -2983,27 +3005,33 @@ function paintSV(cv,h){
   }
   c.putImageData(d,0,0);
 }
+function paintHue(cv){
+  if(!cv)return;
+  const c=cv.getContext('2d'),w=cv.width,h=cv.height;
+  for(let y=0;y<h;y++){c.fillStyle=hsv2hex((y/Math.max(1,h-1))*360,1,1);c.fillRect(0,y,w,1)}
+}
 function editor(){
   const wrap=el('div','ed'+(edFull?' full':''));
   const h=el('h2');h.innerHTML='낱장 편집 <span class="mono">'+shortSrc(openEd.src)+'·'+openEd.i+'</span>';
-  const zl=el('span');zl.className='lbl';zl.style.marginLeft='auto';zl.textContent='확대';h.appendChild(zl);
   const zBtns=[];
   const markZ=()=>zBtns.forEach(t=>t.setAttribute('aria-pressed',String(+t.dataset.z===edZoom)));
-  [[0,'그림','그려진 것에 맞춤 — 빈 칸은 잘라 봅니다'],[-1,'칸','256칸 전체에 맞춥니다']].forEach(([v,n,tip])=>{
+  [[0,'그림','그려진 것에 맞춤'],[-1,'칸','256칸 전체에 맞춤']].forEach(([v,n,tip])=>{
     const x=el('button');x.textContent=n;x.dataset.z=v;x.setAttribute('aria-pressed',String(edZoom===v));
     x.title=tip;
-    x.onclick=()=>{edZoom=v;if(v<0)fitCanvas();else fitContent();markZ()};
+    x.onclick=()=>{if(v<0)fitCanvas();else fitContent();edZoom=base?base.z:v;edScroll=null;markZ()};
     zBtns.push(x);h.appendChild(x)});
   const zm=el('button');zm.textContent='−';zm.title='축소 (휠도 됩니다)';
   zm.onclick=()=>{if(!base)return;edZoom=Math.max(1,base.z-1);setZoomKeep(edZoom);markZ()};h.appendChild(zm);
-  const zl2=el('span');zl2.id='zlab';zl2.className='lbl';zl2.style.minWidth='34px';h.appendChild(zl2);
+  const zl2=el('span');zl2.id='zlab';zl2.className='lbl';zl2.style.minWidth='34px';zl2.style.marginLeft='auto';h.appendChild(zl2);
   const zp=el('button');zp.textContent='＋';zp.title='확대 (휠도 됩니다)';
   zp.onclick=()=>{if(!base)return;edZoom=Math.min(32,base.z+1);setZoomKeep(edZoom);markZ()};h.appendChild(zp);
-  const q=el('button');q.textContent='❓';q.title='휠 확대 · 스페이스+끌기 화면 밀기 · B 연필 E 지우개 I 스포이드 G 페인트통 V 이동 · [ ] 붓 굵기 · Ctrl+Z 되돌리기 · Enter 내려놓기 Esc 물리기 · 도구는 올려 두면 설명이 뜹니다';
-  h.appendChild(q);
-  const fs=el('button');fs.textContent=edFull?'창으로':'전체화면';fs.setAttribute('aria-pressed',String(edFull));
-  fs.onclick=()=>{edFull=!edFull;render()};h.appendChild(fs);
-  const cls=el('button','close');cls.textContent='닫기';cls.style.marginLeft='0';
+  [['gray','회색 칸','#c0c0c0'],['black','검은 칸','#111']].forEach(([id,tip])=>{
+    const x=el('button');x.textContent=id==='gray'?'회색':'검정';x.title=tip;
+    x.setAttribute('aria-pressed',String(chk===id));
+    x.onclick=()=>{chk=id;if(id==='black')document.body.dataset.chk='black';else delete document.body.dataset.chk;
+      document.querySelectorAll('.ed h2 [data-chk]').forEach(t=>t.setAttribute('aria-pressed',String(t.dataset.chk===id)))};
+    x.dataset.chk=id;h.appendChild(x)});
+  const cls=el('button','close');cls.textContent='닫기';
   cls.onclick=()=>{const c=commitStrokes();openEd=null;mountedKey=null;
     if(c)buildEdited(c.key,c.src,c.i,()=>render(),c.blank?{w:c.w,h:c.h}:null);else render()};h.appendChild(cls);
   wrap.appendChild(h);
@@ -3021,13 +3049,17 @@ function editor(){
   const cols=el('div','edcols');L.appendChild(cols);
   const pw=el('div','pal');cols.appendChild(pw);
   const hsv=el('div','hsvpick');
-  const sv=el('canvas');sv.id='svcan';sv.width=120;sv.height=56;sv.title='채도·밝기';
-  const hues=el('input');hues.type='range';hues.id='huesl';hues.min=0;hues.max=360;hues.className='huesl';hues.title='색조';
-  const fg=el('div','fgbox');fg.id='fgbox';fg.style.background=color;fg.title='지금 색 — 눌러서 고르기';
+  const sv=el('canvas');sv.id='svcan';sv.width=108;sv.height=90;sv.title='채도·밝기';
+  const huec=el('canvas');huec.id='huecan';huec.width=14;huec.height=90;huec.title='색조';
+  const hues=el('input');hues.type='hidden';hues.id='huesl';hues.value='0';
+  const fgbg=el('div','fgbg');
+  const fg=el('div','fgbox');fg.id='fgbox';fg.style.background=color;fg.title='앞 색';
+  const bg=el('div','bgbox');bg.title='뒤 색';
   const ci0=el('input');ci0.type='color';ci0.value=color;ci0.style.cssText='position:absolute;opacity:0;width:0;height:0';
   fg.appendChild(ci0);fg.onclick=()=>ci0.click();
   ci0.oninput=e=>setColor(e.target.value);
-  hsv.append(sv,hues,fg);cols.appendChild(hsv);
+  fgbg.append(bg,fg);
+  hsv.append(sv,huec,fgbg,hues);cols.appendChild(hsv);
   const pickSV=e=>{
     const r=sv.getBoundingClientRect();
     const s=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
@@ -3036,11 +3068,16 @@ function editor(){
   };
   sv.onpointerdown=e=>{sv.setPointerCapture(e.pointerId);pickSV(e)};
   sv.onpointermove=e=>{if(e.buttons)pickSV(e)};
-  hues.oninput=()=>{
+  const pickHue=e=>{
+    const r=huec.getBoundingClientRect();
+    const hh=Math.max(0,Math.min(360,((e.clientY-r.top)/r.height)*360));
+    hues.value=String(Math.round(hh));
     const t=rgb2hsv.apply(null,hex2rgb(color));
-    setColor(hsv2hex(+hues.value,t.s,t.v));
+    setColor(hsv2hex(hh,t.s,t.v));
   };
-  setTimeout(()=>{const t=rgb2hsv.apply(null,hex2rgb(color));hues.value=Math.round(t.h);paintSV(sv,+hues.value)},0);
+  huec.onpointerdown=e=>{huec.setPointerCapture(e.pointerId);pickHue(e)};
+  huec.onpointermove=e=>{if(e.buttons)pickHue(e)};
+  setTimeout(()=>{const t=rgb2hsv.apply(null,hex2rgb(color));hues.value=String(Math.round(t.h));paintSV(sv,+hues.value);paintHue(huec)},0);
 
   const T=el('div','tools');
   const tg=el('div','tgrid');
@@ -3085,187 +3122,22 @@ function editor(){
       toolBtns.push(x);tg.appendChild(x)});
   T.appendChild(tg);
 
-  // 고른 조각을 다루는 단추들. 고른 게 없으면 흐리게 둔다.
-  const selRow=el('div','cur');selRow.id='selrow';selRow.style.flexWrap='wrap';
-  const sLab=el('span');sLab.className='mono';sLab.id='sellab';sLab.textContent='고른 곳 없음';
-  cols.appendChild(sLab);
-  const selBtn=(t,title,fn,needflt)=>{const x=el('button','ico');x.textContent=t;x.title=title;
-    if(needflt)x.dataset.needflt='1';
-    x.onclick=()=>{if(needflt?!flt:!sel)return;fn();drawSel();updateSelLab()};selRow.appendChild(x);return x};
-  // 돌리기·뒤집기·크기는 전부 «떠 있는 채로» 한다. 안 구우니 몇 번을 눌러도 안 뭉갠다.
-  // 가운데를 붙잡고 돈다. 직각은 정확한 셈으로, 비스듬한 각은 도트 결을 살려서(RotSprite).
-  selBtn('⟳','시계 방향으로 90도 — 떠 있는 채로 도니 몇 번을 돌려도 안 뭉갭니다',
-    ()=>fltEdit(f=>fltSetAngle((f.angle||0)+90)));
-  // 돌린 뒤에도 «화면에서 보이는 대로» 뒤집혀야 한다 — 돌림에 맞춰 축을 골라 준다.
-  selBtn('↔','좌우 뒤집기',()=>fltEdit(f=>{
-    if(f.rot%180===0)f.fx=f.fx?0:1; else f.fy=f.fy?0:1}));
-  selBtn('↕','위아래 뒤집기',()=>fltEdit(f=>{
-    if(f.rot%180===0)f.fy=f.fy?0:1; else f.fx=f.fx?0:1}));
-  const scaleBy=k=>fltEdit(f=>{
-    const r=fltRect(),nw=Math.max(1,Math.round(r.w*k)),nh=Math.max(1,Math.round(r.h*k));
-    f.x=Math.round(r.x+r.w/2-nw/2);f.y=Math.round(r.y+r.h/2-nh/2);f.dw=nw;f.dh=nh;
-  });
-  selBtn('＋','10% 크게 (가운데 기준) — 모서리 손잡이를 끌어도 됩니다',()=>scaleBy(1.1));
-  selBtn('－','10% 작게 (가운데 기준) — 모서리 손잡이를 끌어도 됩니다',()=>scaleBy(0.9));
-  selBtn('🗑','고른 곳을 비웁니다',()=>{
-    if(flt){                      // 떠 있는 걸 지우면 «뜬 자리를 비운 것» 만 남는다
-      const f=flt.from,copy=flt.copy;flt=null;fltBase=null;
-      if(!copy)pushStrokes([eraseStroke(f)]);
-      sel=null;redraw();return;
-    }
-    push();pushStrokes([eraseSel()]);redraw();
-  });
-  // 비스듬히 돌리기 — 15도씩. 도트가 부서지지 않게 8배로 키워 돌린 뒤 도로 줄인다.
-  const rotRow=el('div','cur');
-  const rotLab=el('span');rotLab.className='mono';rotLab.style.minWidth='62px';rotLab.textContent='비스듬히';
-  const rotIn=el('input');rotIn.type='range';rotIn.id='freerot';rotIn.min=-180;rotIn.max=180;
-  rotIn.step=15;rotIn.value=0;rotIn.style.width='92px';
-  rotIn.title='고른 조각을 비스듬히 돌립니다 — 언제나 «원본 알갱이» 에서 다시 뜨므로 안 뭉갭니다';
-  const rotVal=el('span');rotVal.className='mono';rotVal.style.minWidth='38px';rotVal.textContent='0도';
-  rotIn.oninput=()=>{rotVal.textContent=rotIn.value+'도';
-    fltEdit(()=>fltSetAngle(+rotIn.value))};
-  rotRow.append(rotLab,rotIn,rotVal);
-
-  selBtn('📌','떠 있는 조각을 그림에 박습니다 (Enter)',()=>{dropFloat();sel=null},true);
-  selBtn('↩','붙이거나 들어 올린 것을 없던 일로 (Esc)',()=>cancelFloat(),true);
-  selBtn('✕','고르기를 풉니다',()=>{dropFloat();sel=null});
-  T.appendChild(selRow);
-  cols.appendChild(rotRow);
-
-  const cur=el('div','cur');const box=el('div','box');box.style.background=color;
-  const ci=el('input');ci.type='color';ci.value=color;ci.oninput=e=>{color=e.target.value;box.style.background=color};
-  cur.append(box,ci);const bl=el('span');bl.className='mono';bl.textContent='굵기';cur.appendChild(bl);
+  const cur=el('div','cur');
+  const bl=el('span');bl.className='mono';bl.textContent='굵기';cur.appendChild(bl);
   const bi=el('input');bi.id='brushrange';bi.type='range';bi.min=1;bi.max=24;bi.value=brush;bi.style.width='90px';
-  bi.oninput=e=>{brush=+e.target.value;bs.textContent=brush};
   const bs=el('span');bs.id='brushnum';bs.className='mono';bs.textContent=brush;
+  bi.oninput=e=>{brush=+e.target.value;bs.textContent=brush};
   cur.append(bi,bs);cols.appendChild(cur);
 
-  // 도형·대칭 손잡이 — 그리기 도구를 들었을 때 손이 가는 자리다.
-  const shRow=el('div','cur');shRow.style.flexWrap='wrap';
-  const fillBtn=el('button','ico');fillBtn.id='fillshape';fillBtn.textContent='⬛';
-  fillBtn.title='속 채우기 — 네모·타원을 속까지 칠합니다 (끄면 테두리만)';
-  fillBtn.setAttribute('aria-pressed',String(fillShape));
-  fillBtn.onclick=()=>{fillShape=!fillShape;fillBtn.setAttribute('aria-pressed',String(fillShape))};
-  const dirBtn=el('button','ico');dirBtn.id='shadedir';
-  const dirLab=()=>shadeDir<0?'🌙':'☀️';
-  dirBtn.textContent=dirLab();
-  dirBtn.title='명암 방향 — 어둡게/밝게. 그 낱장이 쓰던 색들 사이를 한 눈금씩';
-  dirBtn.onclick=()=>{shadeDir=-shadeDir;dirBtn.textContent=dirLab()};
-  shRow.appendChild(dirBtn);
-  const dithBtn=el('button','ico');dithBtn.id='dither';dithBtn.textContent='░';
-  dithBtn.title='무늬 — 한 점 걸러 한 점만 칠합니다 (연필·페인트통·도형)';
-  dithBtn.setAttribute('aria-pressed',String(dithOn));
-  dithBtn.onclick=()=>{dithOn=!dithOn;dithBtn.setAttribute('aria-pressed',String(dithOn))};
-  shRow.appendChild(dithBtn);
-  const symBtn=el('button','ico');symBtn.id='symmetry';symBtn.textContent='☯';
-  symBtn.title='좌우 대칭 — 그은 것을 반대쪽에도 그대로';
-  symBtn.setAttribute('aria-pressed',String(symOn));
-  symBtn.onclick=()=>{symOn=!symOn;symBtn.setAttribute('aria-pressed',String(symOn));drawSel()};
-  shRow.append(fillBtn,symBtn);T.appendChild(shRow);
-
-  // 이어 쓴 칸이면 «고치면 다 바뀐다» 는 것을 눈에 보이게 말해 준다.
-  // 공유하는 것을 모르고 고치면 남의 장까지 바뀌는데, 그건 한참 뒤에야 드러난다.
   if(openEd.blank&&openEd.lid&&linkCount(openEd.lid)>1){
     const warn=el('div','cur');warn.style.flexWrap='wrap';
     const wt=el('span','cap');wt.style.color='var(--drop)';
     wt.textContent='이 그림은 '+linkCount(openEd.lid)+'장이 함께 씁니다 — 고치면 다 바뀝니다.';
     const un=el('button');un.id='unlink';un.textContent='따로 떼기';
-    un.title='이 장만 제 그림을 갖게 합니다. 지금 것을 베껴서 떼므로 보이는 건 안 바뀝니다.';
+    un.title='이 장만 제 그림을 갖게 합니다.';
     un.onclick=unlinkCel;
     warn.append(wt,un);cols.appendChild(warn);
   }
-
-  // 「모든 장에」 — 이펙트는 12장이 한 몸이라, 한 장만 고치는 일이 오히려 드물다.
-  const allBtn=el('button','ico');allBtn.id='allframes';allBtn.textContent='📚';
-  allBtn.title=allFrames?('모든 장에 한 번에 · 켬 ('+seq.length+'칸)'):'모든 장에 한 번에 — 색 손보기·내려놓기·지우기가 이어 붙인 칸 전부에 얹힙니다';
-  allBtn.setAttribute('aria-pressed',String(allFrames));
-  allBtn.onclick=()=>{allFrames=!allFrames;allBtn.setAttribute('aria-pressed',String(allFrames));
-    allBtn.title=allFrames?('모든 장에 한 번에 · 켬 ('+seq.length+'칸)'):'모든 장에 한 번에';
-    toast(allFrames?('이제 '+seq.length+'칸 모두에 얹힙니다'):'이제 이 낱장에만 얹힙니다')};
-  T.appendChild(allBtn);
-
-  // ── 색 손보기 ──────────────────────────────────────────────────────────
-  // 같은 이펙트를 속성별로 갈아입히는 손. 고른 곳이 있으면 «거기만», 없으면 낱장 통째로.
-  const adjBox=el('div');adjBox.id='adjbox';
-  const adjHead=el('div','cur');
-  const adjLab=el('span');adjLab.className='mono';adjLab.id='adjscope';adjLab.textContent='색 손보기 — 낱장 통째로';
-  adjHead.appendChild(adjLab);adjBox.appendChild(adjHead);
-  const adjRows=[['hue','색조 돌리기',-180,180,0,'도'],['sat','진하기',0,200,100,'%'],
-    ['val','밝기',0,200,100,'%'],['con','대비',-100,100,0,'']];
-  const adjVals=Object.assign({},ADJ0);
-  const startAdj=()=>{
-    // 미는 순간 «어디에» 얹을지 못 박는다. 미는 도중 고른 곳이 바뀌면 안 되기 때문이다.
-    if(adj)return;
-    const r=sel?clampRect(sel):null;
-    const mk=r?cropMask(r):null;
-    adj=Object.assign({t:'adj'},r?{x:r.x,y:r.y,w:r.w,h:r.h}:{x:0,y:0,w:base.w,h:base.h},
-      mk?{mask:toB64(mk)}:{},adjVals);
-  };
-  adjRows.forEach(([k,name,mn,mx,dv,unit])=>{
-    const row=el('div','cur');
-    const nm=el('span');nm.className='mono';nm.style.minWidth='62px';nm.textContent=name;
-    const inp=el('input');inp.type='range';inp.min=mn;inp.max=mx;inp.value=dv;inp.style.width='92px';
-    inp.dataset.adj=k;
-    const vv=el('span');vv.className='mono';vv.style.minWidth='40px';vv.textContent=dv+unit;
-    inp.oninput=()=>{adjVals[k]=+inp.value;vv.textContent=inp.value+unit;
-      startAdj();adj[k]=+inp.value;redraw()};
-    row.append(nm,inp,vv);adjBox.appendChild(row);
-  });
-  const adjBtns=el('div','cur');
-  const adjApply=el('button');adjApply.textContent='적용';adjApply.title='지금 보이는 색으로 굽습니다';
-  adjApply.onclick=()=>{if(!adj)return;push();dropAdj();
-    Object.assign(adjVals,ADJ0);
-    document.querySelectorAll('#adjbox input[data-adj]').forEach(i=>{
-      const d=({hue:0,sat:100,val:100,con:0})[i.dataset.adj];i.value=d;
-      i.parentNode.lastChild.textContent=d+(i.dataset.adj==='hue'?'도':i.dataset.adj==='con'?'':'%')});
-    toast('색을 손봤습니다')};
-  const adjReset=el('button');adjReset.textContent='되돌리기';adjReset.title='밀던 것을 원래대로';
-  adjReset.onclick=()=>{adj=null;Object.assign(adjVals,ADJ0);
-    document.querySelectorAll('#adjbox input[data-adj]').forEach(i=>{
-      const d=({hue:0,sat:100,val:100,con:0})[i.dataset.adj];i.value=d;
-      i.parentNode.lastChild.textContent=d+(i.dataset.adj==='hue'?'도':i.dataset.adj==='con'?'':'%')});
-    redraw()};
-  adjBtns.append(adjApply,adjReset);adjBox.appendChild(adjBtns);
-  cols.appendChild(adjBox);
-
-  const tl=el('div','cur');tl.innerHTML='<span class="mono">비슷한 색</span>';
-  const ti=el('input');ti.type='range';ti.min=0;ti.max=90;ti.value=tol;ti.style.width='70px';
-  const tv=el('span');tv.className='mono';tv.textContent=tol;ti.oninput=e=>{tol=+e.target.value;tv.textContent=tol};
-  tl.append(ti,tv);cols.appendChild(tl);
-  const opts=el('div','cur');
-  const ob=el('button','ico');ob.textContent='👻';ob.setAttribute('aria-pressed',String(onionOn));
-  ob.title='어니언스킨 — 앞뒤 장을 비칩니다. 앞은 파랑, 뒤는 빨강';
-  ob.onclick=()=>{onionOn=!onionOn;ob.setAttribute('aria-pressed',String(onionOn));
-    const on=document.getElementById('onion');if(on)drawOnion(on);
-    const mk=document.querySelector('.onionmark');
-    if(onionOn&&!mk){const m=el('div','onionmark');m.textContent='앞뒤 '+onionN+'장 비침 — 파랑 앞 · 빨강 뒤';document.querySelector('.cw').appendChild(m)}
-    if(!onionOn&&mk)mk.remove();
-  };opts.appendChild(ob);
-  const onSel=el('select');onSel.id='onionn';
-  onSel.title='앞뒤로 몇 장까지 비출지';
-  [1,2,3].forEach(n=>{const o=el('option');o.value=String(n);o.textContent=String(n);onSel.appendChild(o)});
-  onSel.value=String(onionN);
-  onSel.onchange=()=>{onionN=+onSel.value;
-    const on=document.getElementById('onion');if(on)drawOnion(on);
-    const mk=document.querySelector('.onionmark');
-    if(mk)mk.textContent='앞뒤 '+onionN+'장 비침 — 파랑 앞 · 빨강 뒤'};
-  cols.appendChild(onSel);
-  const ub=el('button','ico');ub.id='eu';ub.textContent='↶';ub.title='되돌리기 (Ctrl+Z)';
-  ub.onclick=()=>{
-    undo();
-  };
-  const rb=el('button','ico');rb.textContent='↺';rb.title='이 낱장 손질을 처음으로';rb.onclick=()=>{push();strokes=[];redraw()};
-  opts.append(ub,rb);T.appendChild(opts);
-
-  const ap=el('button','primary');ap.id='eapply';ap.textContent='적용하고 닫기';
-  ap.onclick=()=>{
-    const k=openEd.key, src=openEd.src, i=openEd.i;
-    push();
-    if(strokes.length)edits[k]=strokes.slice();else delete edits[k];
-    openEd=null;mountedKey=null;
-    buildEdited(k,src,i,()=>render());
-  };
-  cols.appendChild(ap);
   main.append(L,cw,T);wrap.appendChild(main);
   wrap.appendChild(edTimeline());
 
@@ -3400,13 +3272,17 @@ function mount(cv,on,gr,pw){
     if(mountedKey!==k){ strokes=(edits[k]||edits[K(openEd.src,openEd.i)]||[]).slice(); mountedKey=k; sel=null; flt=null; fltBase=null; }
     redraw();drawOnion(on);buildPal(pw);
     bindCanvas(cv);
-    // 그려진 것에 맞춘다. 칸 전체에 맞추면 캐릭터가 점으로 보인다.
-    if(!edZoom)fitContent();
-    else if(edZoom<0)fitCanvas();
+    // 그려진 것에 맞춘 뒤 그 배율을 고정한다. 장을 바꿀 때마다 다시 맞추면
+    // 덩굴만 있는 장은 확 커지고 캐릭터 장은 작아져 비율이 제각각이다.
+    if(!edZoom){fitContent();if(base)edZoom=base.z}
+    else if(edZoom<0){fitCanvas();if(base)edZoom=base.z}
     else{
       setZoom(edZoom);
       const sc0=cv.closest('.cw');
-      if(sc0){sc0.scrollLeft=(img.width*base.z-sc0.clientWidth)/2;sc0.scrollTop=(img.height*base.z-sc0.clientHeight)/2}
+      if(sc0){
+        if(edScroll){sc0.scrollLeft=edScroll.l;sc0.scrollTop=edScroll.t}
+        else{sc0.scrollLeft=(img.width*base.z-sc0.clientWidth)/2;sc0.scrollTop=(img.height*base.z-sc0.clientHeight)/2}
+      }
     }
   };
   // 편집기는 **원본**에서 시작한다. 손질한 그림을 불러오면 같은 손질이 두 번 얹힌다.
@@ -3717,7 +3593,7 @@ function bindCanvas(cv){
     const ox=(e.clientX-box.left)/base.z, oy=(e.clientY-box.top)/base.z;   // 그림 좌표
     const before=base.z;
     setZoom(e.deltaY<0?before+Math.max(1,Math.round(before*0.25)):before-Math.max(1,Math.round(before*0.2)));
-    edZoom=0;
+    edZoom=base.z;
     document.querySelectorAll('.ed h2 [data-z]').forEach(t=>t.setAttribute('aria-pressed','false'));
     const sc=cv.closest('.cw');
     if(sc){ sc.scrollLeft += ox*(base.z-before) ; sc.scrollTop += oy*(base.z-before); }

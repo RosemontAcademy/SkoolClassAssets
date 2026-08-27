@@ -583,7 +583,7 @@ open(WANT_PORT);
 // ── 화면 ─────────────────────────────────────────────────────────────────────
 const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>공격 연출 편집기</title>
+<title>연출 편집기</title>
 <style>
   :root{--ground:#F3F4F6;--surface:#fff;--line:#DEE0E6;--ink:#171821;--muted:#666A78;
     --accent:#3B4CC0;--old:#5B6270;--drop:#A03030;--cell:#22242C;--cell2:#2B2E37}
@@ -595,11 +595,14 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .mono{font-family:ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums}
   aside{border-right:1px solid var(--line);overflow-y:auto;background:var(--surface)}
   aside h1{margin:0;padding:13px 15px 9px;font-size:15px;font-weight:800;border-bottom:1px solid var(--line)}
-  .it{display:flex;gap:7px;align-items:baseline;padding:7px 15px;cursor:pointer;border-bottom:1px solid color-mix(in srgb,var(--line) 45%,transparent)}
-  .it:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
-  .it.on{background:color-mix(in srgb,var(--accent) 16%,transparent);font-weight:800}
-  .it small{color:var(--muted);font-size:11px;font-family:ui-monospace,Consolas,monospace}
-  .it .done{margin-left:auto;color:var(--accent);font-size:11px}
+  .sp{padding:9px 12px 7px;border-bottom:1px solid color-mix(in srgb,var(--line) 45%,transparent)}
+  .spn{font-size:12px;font-weight:800;letter-spacing:.02em;margin-bottom:5px}
+  .spk{display:flex;flex-wrap:wrap;gap:4px}
+  .spk .it{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:7px;
+    border:1px solid var(--line);font-size:11px;font-weight:700;cursor:pointer;background:var(--ground)}
+  .spk .it:hover{border-color:var(--accent)}
+  .spk .it.on{background:color-mix(in srgb,var(--accent) 18%,transparent);border-color:var(--accent);font-weight:800}
+  .spk .it .done{color:var(--accent);font-size:9px}
   main{overflow-y:auto;padding:0 18px 40px;display:flex;flex-direction:column;gap:12px}
   .bar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:8;
     background:color-mix(in srgb,var(--ground) 95%,transparent);backdrop-filter:blur(8px);padding:10px 0;border-bottom:1px solid var(--line)}
@@ -612,16 +615,17 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
   .row{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px;display:flex;gap:11px;align-items:flex-start}
   .row.seq{border-color:color-mix(in srgb,var(--accent) 40%,transparent);background:color-mix(in srgb,var(--accent) 6%,transparent)}
-  .stage{width:calc(96px * var(--z,1));height:calc(96px * var(--z,1));flex:0 0 auto;border-radius:9px;border:1px solid var(--line);display:grid;place-items:center;
+  .stage{width:calc(96px * var(--z,1));height:calc(96px * var(--z,1));flex:0 0 auto;border-radius:9px;border:1px solid var(--line);overflow:hidden;
     background-color:var(--cell);background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
     linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:16px 16px;background-position:0 0,8px 8px}
-  .stage img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
+  .stage img,.thumb img{image-rendering:pixelated;display:block;border:0}
+  .thumb{width:calc(66px * var(--z,1));height:calc(66px * var(--z,1));overflow:hidden;border-radius:5px;flex:0 0 auto;
+    background-color:var(--cell);background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
+    linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:12px 12px;background-position:0 0,6px 6px}
+  .thumb.sm{width:44px;height:44px;background-size:10px 10px;background-position:0 0,5px 5px}
   .cap{font-size:11px;color:var(--muted);text-align:center;margin-top:3px}
   .strip{display:flex;gap:6px;overflow-x:auto;flex:1;padding-bottom:4px;min-height:60px}
   .fr,.slot{position:relative;flex:0 0 auto;padding:3px;border-radius:9px;border:2px solid var(--line);background:var(--cell);cursor:pointer}
-  .fr img,.slot img{width:calc(66px * var(--z,1));height:calc(66px * var(--z,1));object-fit:contain;image-rendering:pixelated;display:block;border-radius:5px;
-    background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
-    linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);background-size:12px 12px;background-position:0 0,6px 6px}
   .fr .m,.slot .m{font-size:9.5px;color:var(--muted);text-align:center;font-family:ui-monospace,Consolas,monospace}
   .fr.blank{border-style:dashed}.fr.blank .m{color:var(--drop);font-weight:800}
   .fr.edited{box-shadow:0 0 0 2px color-mix(in srgb,var(--drop) 60%,transparent) inset}
@@ -646,10 +650,7 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .lrow{display:flex;align-items:center;gap:8px;padding:5px;border-radius:8px;
     border:1px solid var(--line);background:var(--surface)}
   .lrow.base{border-style:dashed;opacity:.85}
-  .lrow img{width:44px;height:44px;object-fit:contain;image-rendering:pixelated;border-radius:5px;
-    background-image:linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%),
-    linear-gradient(45deg,var(--cell2) 25%,transparent 25%,transparent 75%,var(--cell2) 75%);
-    background-size:10px 10px;background-position:0 0,5px 5px}
+  .lrow .thumb{flex:0 0 auto}
   .lname{flex:1;min-width:90px;font-size:12px;font-family:ui-monospace,Consolas,monospace}
   .lrow select{font-size:11px;padding:2px 4px;border-radius:6px}
   .lrow input[type=range]{width:82px}
@@ -661,10 +662,10 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .row.pick .cap{margin:0;flex-basis:100%;text-align:left}
   .row.foreign{opacity:.95}
   .row.foreign .fr{border-style:dotted}
-  body[data-bg=dark] .stage,body[data-bg=dark] .fr img,body[data-bg=dark] .slot img,body[data-bg=dark] .cw{background-image:none;background-color:#0A0B0F}
-  body[data-bg=light] .stage,body[data-bg=light] .fr img,body[data-bg=light] .slot img,body[data-bg=light] .cw{background-image:none;background-color:#fff}
-  body[data-bg=grey] .stage,body[data-bg=grey] .fr img,body[data-bg=grey] .slot img,body[data-bg=grey] .cw{background-image:none;background-color:#8A8F9A}
-  body[data-bg=none] .stage,body[data-bg=none] .fr img,body[data-bg=none] .slot img,body[data-bg=none] .cw{background-image:none;background-color:transparent}
+  body[data-bg=dark] .stage,body[data-bg=dark] .thumb,body[data-bg=dark] .cw{background-image:none;background-color:#0A0B0F}
+  body[data-bg=light] .stage,body[data-bg=light] .thumb,body[data-bg=light] .cw{background-image:none;background-color:#fff}
+  body[data-bg=grey] .stage,body[data-bg=grey] .thumb,body[data-bg=grey] .cw{background-image:none;background-color:#8A8F9A}
+  body[data-bg=none] .stage,body[data-bg=none] .thumb,body[data-bg=none] .cw{background-image:none;background-color:transparent}
 
   /* ── 게임 화면 미리보기 ──
      게임은 FX 를 캐릭터 위에 얹고, 선생님 화면에서는 screen 합성으로 그린다.
@@ -771,16 +772,56 @@ const PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8" />
   .msg.err{border-color:color-mix(in srgb,var(--drop) 50%,transparent);color:var(--drop)}
   code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:var(--ground);padding:1px 5px;border-radius:4px}
 </style></head><body>
-<aside><h1>공격 연출</h1><div id="list"></div></aside>
+<aside><h1>연출</h1><div id="list"></div></aside>
 <main>
   <div class="bar" id="bar"><span class="lbl">왼쪽에서 종을 고르세요</span></div>
   <div id="work"></div>
 </main>
 <script>
 const $=s=>document.querySelector(s), el=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e};
+const KIND_KO={attack:'공격',attacked:'맞는 쪽',hit:'맞음'};
+const kindKo=k=>KIND_KO[k]||k;
+function boxOfData(d,w,h,a){
+  a=a||40;let x0=w,y0=h,x1=-1,y1=-1;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    if(d[(y*w+x)*4+3]>a){if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y}
+  }
+  if(x1<0)return {x:0,y:0,w:w,h:h};
+  return {x:x0,y:y0,w:x1-x0+1,h:y1-y0+1};
+}
+const thumbBox={};
+function fitThumb(img){
+  const go=()=>{
+    const w=img.naturalWidth,h=img.naturalHeight;if(!w)return;
+    const key=img.currentSrc||img.src;
+    let box=thumbBox[key];
+    if(!box){
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      const g=c.getContext('2d',{willReadFrequently:true});
+      try{g.drawImage(img,0,0);box=thumbBox[key]=boxOfData(g.getImageData(0,0,w,h).data,w,h)}
+      catch(e){box={x:0,y:0,w:w,h:h}}
+    }
+    const wrap=img.parentNode;if(!wrap)return;
+    const tw=wrap.clientWidth||66,th=wrap.clientHeight||66;
+    const pad=Math.max(2,Math.round(Math.max(box.w,box.h)*0.12));
+    const x=Math.max(0,box.x-pad),y=Math.max(0,box.y-pad);
+    const bw=Math.min(w-x,box.w+pad*2),bh=Math.min(h-y,box.h+pad*2);
+    const s=Math.min(tw/bw,th/bh);
+    img.style.width=(w*s)+'px';img.style.height=(h*s)+'px';
+    img.style.maxWidth='none';img.style.objectFit='none';
+    img.style.marginLeft=((tw-bw*s)/2-x*s)+'px';
+    img.style.marginTop=((th-bh*s)/2-y*s)+'px';
+  };
+  img.onload=go;
+  if(img.complete&&img.naturalWidth)go();
+}
+function pix(src,sm){
+  const box=el('div','thumb'+(sm?' sm':''));const img=el('img');img.src=src;box.appendChild(img);fitThumb(img);return box;
+}
 // 슬롯은 게임에서 받아온다(숫자를 여기 박아 두면 배치를 바꿀 때마다 어긋난다).
 let CANVAS=[820,700];
-let SLOT={boss:{x:516,y:19,s:117},player:{x:355,y:208,s:97},atk:{x:353,y:99,s:200},atkd:{x:357,y:36,s:276}};
+let SLOT={boss:{x:516,y:19,s:117},player:{x:355,y:208,s:97},atk:{x:353,y:99,s:200},atkd:{x:357,y:36,s:276},
+           hitBoss:{x:516,y:52,s:94},hitPlayer:{x:353,y:214,s:98}};
 let calibSource='불러오는 중';
 async function loadCalib(force){
   try{
@@ -788,7 +829,9 @@ async function loadCalib(force){
     const it=c.items||[];
     if(it.length>=5){
       SLOT={boss:{x:it[0].x,y:it[0].y,s:it[0].size},player:{x:it[1].x,y:it[1].y,s:it[1].size},
-            atk:{x:it[3].x,y:it[3].y,s:it[3].size},atkd:{x:it[4].x,y:it[4].y,s:it[4].size}};
+            atk:{x:it[3].x,y:it[3].y,s:it[3].size},atkd:{x:it[4].x,y:it[4].y,s:it[4].size},
+            hitBoss:it[5]?{x:it[5].x,y:it[5].y,s:it[5].size}:{x:516,y:52,s:94},
+            hitPlayer:it[6]?{x:it[6].x,y:it[6].y,s:it[6].size}:{x:353,y:214,s:98}};
     }
     if(c.canvas)CANVAS=c.canvas;
     calibSource=c.source+(c.updated_at?' · '+String(c.updated_at).slice(0,16).replace('T',' '):'');
@@ -801,6 +844,7 @@ const PANEL_H=Math.min(540,Math.max(300,Math.round(CANVAS[1]*0.56)));
 const SCENE_H=CANVAS[1]-PANEL_H;
 let items=[],cur=null,meta={},seq=[],edits={},fit=3000,zoom=1,playT=null,openEd=null;
 let leadShort=true,undoStack=[],redoStack=[],blend='screen',showBg=true,showSlots=false,pinGame=true;
+let hitOnBoss=true,showEdHelp=false;
 // 복사해 둔 칸. 층까지 통째로 담는다 — 공들여 얹은 층을 다시 얹게 만들면 안 된다.
 // 손질(붓질)은 낱장에 딸린 것이라 복제해도 그대로 따라온다(열쇠가 src+장번호라서).
 let clip=null;
@@ -1016,9 +1060,21 @@ async function boot(){
   await loadCalib();
   items=await (await fetch('/api/items')).json();
   const L=$('#list');
-  items.forEach(it=>{const d=el('div','it');d.dataset.id=it.id;
-    d.innerHTML='<span>'+it.dir.replace(/^\\d+-/,'')+'</span><small>'+it.kind+'</small>'+(it.done?'<span class="done">●</span>':'');
-    d.onclick=()=>load(it);L.appendChild(d)});
+  let last='';
+  items.forEach(it=>{
+    if(it.dir!==last){
+      last=it.dir;
+      const g=el('div','sp');
+      const nm=el('div','spn');nm.textContent=it.dir.replace(/^\\d+-/,'');g.appendChild(nm);
+      const ks=el('div','spk');ks.dataset.dir=it.dir;g.appendChild(ks);
+      L.appendChild(g);
+    }
+    const ks=L.querySelector('.spk[data-dir="'+it.dir+'"]');
+    const d=el('button','it');d.dataset.id=it.id;d.type='button';
+    d.textContent=it.kind;
+    if(it.done){const dot=el('span','done');dot.textContent='●';d.appendChild(dot)}
+    d.onclick=()=>load(it);ks.appendChild(d);
+  });
 
   // SkoolClass 설정의 「FX 편집기」 단추가 ?dir=25-pikachu&kind=attack 로 부른다.
   // 62개 목록에서 눈으로 찾게 하면 단추를 만든 의미가 없다.
@@ -1032,7 +1088,7 @@ async function boot(){
     const hit=items.find(it=>it.id===want);
     if(hit){
       load(hit);
-      const node=[...L.children].find(n=>n.dataset.id===want);
+      const node=[...L.querySelectorAll('.it')].find(n=>n.dataset.id===want);
       if(node)node.scrollIntoView({block:'center'});
     }else{
       // 조용히 첫 항목을 열면 원장님은 엉뚱한 종을 고친 줄도 모른다.
@@ -1079,7 +1135,7 @@ function render(){
     ensureComposites(()=>{reFixing=false;render()});return;
   }
   const b=$('#bar');b.innerHTML='';
-  const t=el('span','lbl');t.textContent=cur.dir+' · '+cur.kind+' · '+cur.canvas;b.appendChild(t);
+  const t=el('span','lbl');t.textContent=cur.dir+' · '+kindKo(cur.kind)+' · '+cur.canvas;b.appendChild(t);
   // 재료가 다섯이면 「…전부」 단추도 다섯이 되어 도구줄이 무슨 줄인지 알 수 없어진다
   // (2026-08-25 원장님: "너무 뭐가 많아 뭐가 뭔지 하나도 모르겠어"). 고르는 칸 하나로 모은다.
   b.appendChild(lab('재료'));
@@ -1159,19 +1215,9 @@ function render(){
   const W=$('#work');W.innerHTML='';
   // 원본과 «지금 쓰는 것» 은 늘 보인다. 굽기·저장본 기록은 접어 둔다 —
   // 필요할 때만 펼치면 된다. 안 그러면 줄이 다섯이 되어 만든 것이 화면 밖으로 밀린다.
-  const isOld=s=>/^(b|s)\\d+$/.test(s.id);
+  const isOld=s=>/^(b|s)\\d+$/.test(s.id)||s.id==='new'||/^v\\d+$/.test(s.id);
   const shown=cur.sources.filter(s=>showOldSources||!isOld(s));
   const hidden=cur.sources.length-shown.length;
-  shown.forEach(s=>W.appendChild(strip(s)));
-  if(hidden>0||showOldSources){
-    const t=el('button');t.style.margin='2px 0 8px';
-    t.textContent=showOldSources?'옛 판 접기':('옛 판 '+hidden+'줄 펼치기');
-    t.title='굽기·저장본 기록입니다. 지금 쓰는 것과 원본은 항상 보입니다.';
-    t.onclick=()=>{showOldSources=!showOldSources;render()};
-    W.appendChild(t);
-  }
-  extras.forEach(x=>W.appendChild(extraStrip(x)));
-  W.appendChild(foreignPicker());
   W.appendChild(seqRow());
   if(selSlot!==null&&seq[selSlot]) W.appendChild(layersPanel(selSlot));
   const D=delays();const loop=D.reduce((a,b)=>a+b,0);
@@ -1181,6 +1227,16 @@ function render(){
       +' · 한 바퀴 <b>'+loop+'ms</b> → 창 '+(fit/1000)+'초 안에서 <b>'+(fit/loop).toFixed(2)+'바퀴</b>'
     :'낱장을 눌러 크게 보고, ＋로 담으세요.';
   W.appendChild(info);
+  shown.forEach(s=>W.appendChild(strip(s)));
+  if(hidden>0||showOldSources){
+    const t=el('button');t.style.margin='2px 0 8px';
+    t.textContent=showOldSources?'옛 판 접기':('옛 판 '+hidden+'줄 펼치기');
+    t.title='굽기·저장본·다시 구운 기록입니다. 지금 쓰는 것과 원본은 항상 보입니다.';
+    t.onclick=()=>{showOldSources=!showOldSources;render()};
+    W.appendChild(t);
+  }
+  extras.forEach(x=>W.appendChild(extraStrip(x)));
+  W.appendChild(foreignPicker());
   W.appendChild(pubBar());
   W.appendChild(gameView());
   if(openEd) W.appendChild(editor());
@@ -1229,13 +1285,14 @@ function strip(s){
   const row=el('div','row');
   const box=el('div');const st=el('div','stage');const im=el('img');st.appendChild(im);box.appendChild(st);
   const c=el('div','cap');c.textContent=s.label+' '+s.frames+'장';box.appendChild(c);row.appendChild(box);
-  let k=0;stripTimers.push(setInterval(()=>{if(!meta[s.id])return;k=(k+1)%s.frames;im.src=furl(s.id,k)},250));
+  let k=0;stripTimers.push(setInterval(()=>{if(!meta[s.id])return;k=(k+1)%s.frames;im.src=furl(s.id,k);fitThumb(im)},250));
+  fitThumb(im);
   const sp=el('div','strip');
   for(let i=0;i<s.frames;i++){
     const f=meta[s.id].fills[i],blank=i>0&&f<meta[s.id].fills[0]*0.25;
     const b=el('div','fr'+(blank?' blank':'')+(nEdits(s.id,i)?' edited':'')+(openEd&&openEd.key===K(s.id,i)?' sel':''));
     b.draggable=true;
-    const img=el('img');img.src=furl(s.id,i);b.appendChild(img);
+    b.appendChild(pix(furl(s.id,i)));
     const m=el('div','m');m.textContent=i+' · '+f+'%'+(blank?' 빔':'');b.appendChild(m);
     b.onclick=()=>{const c=commitStrokes();openEd={src:s.id,i,key:K(s.id,i)};mountedKey=null;
       const go=()=>{render();setTimeout(()=>{const e=document.querySelector('.ed');if(e)e.scrollIntoView({behavior:'smooth',block:'nearest'})},30)};
@@ -1269,12 +1326,13 @@ function seqRow(){
   const row=el('div','row seq');
   const box=el('div');const st=el('div','stage');const im=el('img');im.id='seqimg';st.appendChild(im);box.appendChild(st);
   const c=el('div','cap');c.textContent='만든 것 '+seq.length+'장';box.appendChild(c);row.appendChild(box);
+  fitThumb(im);
   const sp=el('div','strip');sp.id='seqstrip';
   seq.forEach((s,n)=>{
     const b=el('div','slot'+(s.src==='old'?' old':'')+(slotEdits(s).length?' edited':'')
       +(openEd&&openEd.key===slotOwn(s)?' sel':''));
     b.draggable=true;b.dataset.n=n;b.title='눌러서 이 낱장 편집 · 낱장을 여기로 끌어다 놓으면 위에 얹습니다';
-    const img=el('img');img.src=slotURL(s);b.appendChild(img);
+    b.appendChild(pix(slotURL(s)));
     const m=el('div','m');m.textContent=shortSrc(s.src)+'·'+s.i;b.appendChild(m);
     if(s.over&&s.over.length){
       const lg=el('div','lay');lg.textContent='층 '+nLayers(s);
@@ -1490,7 +1548,7 @@ function foreignPicker(){
   const none=el('option');none.value='';none.textContent='— 고르세요 —';sel.appendChild(none);
   items.filter(it=>it.id!==cur.id&&it.w===cur.w&&it.h===cur.h).forEach(it=>{
     const o=el('option');o.value=it.id;
-    o.textContent=it.dir.replace(/^\\d+-/,'')+' · '+(it.kind==='attack'?'공격':'맞는 쪽');
+     o.textContent=it.dir.replace(/^\\d+-/,'')+' · '+kindKo(it.kind);
     sel.appendChild(o)});
   row.appendChild(sel);
   const add=el('button');add.textContent='재료 줄에 더하기';
@@ -1502,7 +1560,7 @@ function foreignPicker(){
       if(extras.some(x=>x.key===key))continue;
       const m=await (await fetch('/api/frames?dir='+encodeURIComponent(it.dir)+'&kind='+it.kind+'&src='+s.id)).json();
       extras.push({key,dir:it.dir,kind:it.kind,src:s.id,label:it.dir.replace(/^\\d+-/,'')+' '+
-        (it.kind==='attack'?'공격':'맞는 쪽')+' · '+s.label,fills:m.fills});
+        kindKo(it.kind)+' · '+s.label,fills:m.fills});
     }
     add.disabled=false;add.textContent='재료 줄에 더하기';render()};
   row.appendChild(add);
@@ -1521,8 +1579,7 @@ function extraStrip(x){
   const sp=el('div','strip');
   x.fills.forEach((f,i)=>{
     const b=el('div','fr');
-    const img=el('img');img.src='/frame.png?dir='+encodeURIComponent(x.dir)+'&kind='+x.kind+'&src='+x.src+'&i='+i;
-    b.appendChild(img);
+      b.appendChild(pix('/frame.png?dir='+encodeURIComponent(x.dir)+'&kind='+x.kind+'&src='+x.src+'&i='+i));
     const m=el('div','m');m.textContent=i+' · '+f+'%';b.appendChild(m);
     b.draggable=true;b.title='칸 위로 끌어다 놓으면 층으로 얹힙니다';
     b.addEventListener('dragstart',e=>{drag={kind:'layer',dir:x.dir,dirKind:x.kind,src:x.src,i};
@@ -1551,7 +1608,7 @@ function layersPanel(n){
     const k=s.over.length-1-rev;
     const r=el('div','lrow');
     if(L.off)r.style.opacity='.45';
-    const im=el('img');im.src=layURL(L);r.appendChild(im);
+    r.appendChild(pix(layURL(L),true));
     const nm=el('div','lname');nm.textContent=layName(L);
     if(isBlank(L)){
       // 그린 층은 «고치는» 것이 본업이다 — 이름을 누르면 바로 그 층을 연다.
@@ -1689,8 +1746,9 @@ function gameView(){
   const wrap=el('div','game');
   const SC=0.62;
   const f=el('div','field');
-  const isAtk0=cur.kind==='attack';
-  const fxSlot=isAtk0?SLOT.atk:SLOT.atkd;
+  const isHit=cur.kind==='hit';
+  const isAtk=cur.kind==='attack';
+  const fxSlot=isHit?(hitOnBoss?SLOT.hitBoss:SLOT.hitPlayer):(isAtk?SLOT.atk:SLOT.atkd);
   // 문제 패널은 텅 빈 칸이라 자리만 잡아먹는다. 장면 높이만 쓰되, FX 가 그 아래로
   // 넘치는 경우(attacked 는 y35+318=353 으로 장면 308 을 넘는다)만 그만큼 더 둔다.
   const fieldH=Math.max(SCENE_H,fxSlot.y+fxSlot.s)+6;
@@ -1703,12 +1761,14 @@ function gameView(){
     line.textContent='여기부터 문제 패널';f.appendChild(line)}
   const put=(img,slot)=>{img.style.left=slot.x*SC+'px';img.style.top=slot.y*SC+'px';
     img.style.width=slot.s*SC+'px';img.style.height=slot.s*SC+'px';img.style.objectFit='contain';f.appendChild(img)};
-  const isAtk=isAtk0;
-  if(isAtk){const b=el('img');b.src='/sprite.gif?dir='+encodeURIComponent(cur.dir);put(b,SLOT.boss)}
+  if(isHit){
+    const b=el('img');b.src='/sprite.gif?dir='+encodeURIComponent(cur.dir);put(b,SLOT.boss);
+    const p=el('img');p.src='/sprite.gif?dir='+encodeURIComponent(cur.dir)+'&back=1';put(p,SLOT.player);
+  }else if(isAtk){const b=el('img');b.src='/sprite.gif?dir='+encodeURIComponent(cur.dir);put(b,SLOT.boss)}
   else{const p=el('img');p.src='/sprite.gif?dir='+encodeURIComponent(cur.dir)+'&back=1';put(p,SLOT.player)}
   const fx=el('img');fx.id='gamefx';fx.style.mixBlendMode=blend==='screen'?'screen':'normal';
-  fx.style.zIndex='5';put(fx,isAtk?SLOT.atk:SLOT.atkd);
-  if(showSlots){const sl=isAtk?SLOT.atk:SLOT.atkd;const box=el('div','slotbox');
+  fx.style.zIndex='5';put(fx,fxSlot);
+  if(showSlots){const sl=fxSlot;const box=el('div','slotbox');
     box.style.left=sl.x*SC+'px';box.style.top=sl.y*SC+'px';box.style.width=sl.s*SC+'px';box.style.height=sl.s*SC+'px';f.appendChild(box)}
   wrap.appendChild(f);
 
@@ -1724,14 +1784,22 @@ function gameView(){
   bb.onclick=()=>{showBg=!showBg;render()};
   const sb=el('button');sb.textContent='슬롯 테두리';sb.setAttribute('aria-pressed',String(showSlots));
   sb.onclick=()=>{showSlots=!showSlots;render()};
-  ck.append(bb,sb);o.appendChild(ck);
+  ck.append(bb,sb);
+  if(isHit){
+    [['보스에',true],['학생에',false]].forEach(([n,v])=>{
+      const x=el('button');x.textContent=n;x.setAttribute('aria-pressed',String(hitOnBoss===v));
+      x.onclick=()=>{hitOnBoss=v;render()};ck.appendChild(x)});
+  }
+  o.appendChild(ck);
   const cs=el('div','cur');
   const src=el('span');src.className='gnote';src.style.flex='1';src.textContent='배치: '+calibSource;
   const rf=el('button');rf.textContent='배치 새로고침';rf.title='게임에서 CALIBRATE 로 바꾼 배치를 다시 읽어옵니다';
   rf.onclick=async()=>{await loadCalib(true);render()};
   cs.append(src,rf);o.appendChild(cs);
   const n=el('div','gnote');
-  n.innerHTML=(isAtk?'FX 는 <b>학생 자리</b>('+SLOT.atk.s+'px)에 뜨고 학생 스프라이트는 감춰집니다. 보스가 표적입니다.'
+  n.innerHTML=(isHit
+    ?('Hit FX 는 '+(hitOnBoss?'<b>보스</b>('+SLOT.hitBoss.s+'px)':'<b>학생</b>('+SLOT.hitPlayer.s+'px)')+' 자리에 맞습니다. 정답이면 보스, 오답이면 학생입니다.')
+    :isAtk?'FX 는 <b>학생 자리</b>('+SLOT.atk.s+'px)에 뜨고 학생 스프라이트는 감춰집니다. 보스가 표적입니다.'
     :'FX 는 <b>보스 자리</b>('+SLOT.atkd.s+'px)에 뜨고 보스 스프라이트는 감춰집니다. 학생이 표적입니다.')
     +'<br><br>원본 '+cur.canvas+' 을 그 크기로 늘려 그립니다.'
     +(blend==='screen'?'<br><br><b>screen 합성에서는 어두운 픽셀이 거의 안 보입니다.</b> 체커 위에서 거슬리던 검은 잔재가 여기서는 이미 안 보일 수 있습니다.':'');
@@ -1770,7 +1838,7 @@ function playStep(d){
 function showFrame(k){
   const im=$('#seqimg'),gm=$('#gamefx');
   const u=slotURL(seq[k]);
-  if(im)im.src=u;if(gm)gm.src=u;
+  if(im){im.src=u;fitThumb(im)}if(gm)gm.src=u;
   markPlayhead(k);
 }
 function play(){
@@ -2818,10 +2886,11 @@ function editor(){
   const h=el('h2');h.innerHTML='낱장 편집 <span class="mono">'+shortSrc(openEd.src)+'·'+openEd.i+'</span>';
   const zl=el('span');zl.className='lbl';zl.style.marginLeft='auto';zl.textContent='확대';h.appendChild(zl);
   const zBtns=[];
-  [[0,'맞추기'],[2,'2배'],[4,'4배'],[8,'8배'],[12,'12배'],[16,'16배']].forEach(([v,n])=>{
+  [[0,'그림'],[-1,'칸'],[2,'2배'],[4,'4배'],[8,'8배'],[12,'12배'],[16,'16배']].forEach(([v,n])=>{
     const x=el('button');x.textContent=n;x.dataset.z=v;x.setAttribute('aria-pressed',String(edZoom===v));
-    // 맞추기는 그림을 칸 한가운데 놓고, 배율 단추는 «보던 자리» 를 붙잡는다.
-    x.onclick=()=>{v?setZoomKeep(v):fitZoom();edZoom=v;
+    x.title=v===0?'그려진 것에 맞춰 키웁니다 — 빈 칸은 잘라 봅니다':v<0?'256칸 전체에 맞춥니다':'고정 배율. 보던 자리를 붙잡습니다.';
+    // 그림=그려진 네모에 맞춤. 칸=캔버스 전체. 배율 단추는 «보던 자리» 를 붙잡는다.
+    x.onclick=()=>{edZoom=v;if(v>0)setZoomKeep(v);else if(v<0)fitCanvas();else fitContent();
       zBtns.forEach(t=>t.setAttribute('aria-pressed',String(+t.dataset.z===v)))};
     zBtns.push(x);h.appendChild(x)});
   const zl2=el('span');zl2.id='zlab';zl2.className='lbl';zl2.style.minWidth='34px';h.appendChild(zl2);
@@ -2901,7 +2970,14 @@ function editor(){
   selBtn('해제','고르기를 풉니다',()=>{dropFloat();sel=null});
   T.appendChild(selRow);
   T.appendChild(rotRow);
-  const selHint=el('div');selHint.className='cap';selHint.style.textAlign='left';
+  const helpBtn=el('button');helpBtn.textContent=showEdHelp?'조작법 접기':'조작법';
+  helpBtn.setAttribute('aria-pressed',String(showEdHelp));
+  helpBtn.onclick=()=>{showEdHelp=!showEdHelp;helpBtn.textContent=showEdHelp?'조작법 접기':'조작법';
+    helpBtn.setAttribute('aria-pressed',String(showEdHelp));
+    document.querySelectorAll('.edhelp').forEach(n=>n.style.display=showEdHelp?'':'none')};
+  T.appendChild(helpBtn);
+  const selHint=el('div','edhelp');selHint.className='cap edhelp';selHint.style.textAlign='left';
+  selHint.style.display=showEdHelp?'':'none';
   selHint.innerHTML='고르는 도구 넷 — <b>네모</b>(M) <b>올가미</b>(Q) <b>타원 선택</b> <b>마술봉</b>(W, 비슷한 색 덩어리) · '
     +'그리는 도구 — <b>직선</b>(L) <b>네모</b>(U) <b>타원</b>(O), <b>Shift</b> 면 반듯하게 · '
     +'<b>Shift</b> 더하기 <b>Alt</b> 빼기 · 안을 <b>끌면 들려서</b> 떠 있게 됩니다 — 그동안은 본체가 안 따라옵니다 · '
@@ -3051,7 +3127,8 @@ function editor(){
     buildEdited(k,src,i,()=>render());   // 손질한 그림을 만든 뒤에 화면을 그린다
   };
   T.appendChild(ap);
-  const hint=el('div');hint.className='cap';hint.style.textAlign='left';
+  const hint=el('div','edhelp');hint.className='cap edhelp';hint.style.textAlign='left';
+  hint.style.display=showEdHelp?'':'none';
   hint.innerHTML='손댄 자국은 좌표로 저장됩니다. 원본 gif 는 안 바뀝니다.<br>'
     +'<b>휠</b> 확대·축소(커서 지점 기준) · <b>스페이스+끌기</b> 또는 <b>가운데 버튼</b> 으로 화면 밀기<br>'
     +'<b>B</b> 연필 <b>E</b> 지우개 <b>I</b> 스포이드 <b>G</b> 페인트통 <b>V</b> 이동 · <b>[ ]</b> 붓 굵기<br>'
@@ -3113,22 +3190,34 @@ function setZoomKeep(z){
   sc.scrollLeft=cx*base.z-sc.clientWidth/2;
   sc.scrollTop=cy*base.z-sc.clientHeight/2;
 }
-/** 칸에 딱 맞게 줄이고 한가운데 놓는다 (Aseprite 의 «화면에 맞추기»). */
-function fitZoom(){
+function contentBox(){
+  if(!base)return null;
+  try{return boxOfData(ctxOf().getImageData(0,0,base.w,base.h).data,base.w,base.h)}
+  catch(e){return {x:0,y:0,w:base.w,h:base.h}}
+}
+/** 256칸 전체에 맞춘다. 빈 체커가 대부분이면 캐릭터가 점으로 보인다. */
+function fitCanvas(){
   setZoom(autoZoom());
   const sc=document.querySelector('.ed .cw');
   if(sc&&base){sc.scrollLeft=(base.w*base.z-sc.clientWidth)/2;sc.scrollTop=(base.h*base.z-sc.clientHeight)/2}
 }
+/** 그려진 것에 맞춰 키운다. 리자몽이 칸 한가운데 점만 하던 자리. */
+function fitContent(){
+  const box=contentBox()||{x:0,y:0,w:base.w,h:base.h};
+  if(box.w<8||box.h<8){fitCanvas();return}
+  const sc=document.querySelector('.ed .cw');
+  const rw=sc&&sc.clientWidth?sc.clientWidth-18:(edFull?innerWidth-400:460);
+  const rh=sc&&sc.clientHeight?sc.clientHeight-18:(edFull?innerHeight-190:460);
+  const z=Math.max(1,Math.min(32,Math.floor(Math.min(rw/box.w,rh/box.h))));
+  setZoom(z);
+  if(sc){sc.scrollLeft=(box.x+box.w/2)*z-sc.clientWidth/2;sc.scrollTop=(box.y+box.h/2)*z-sc.clientHeight/2}
+}
+function fitZoom(){fitContent()}
 function mount(cv,on,gr,pw){
   const img=new Image();
   img.onload=()=>{
     base={img,z:1,w:img.width,h:img.height};
-    const z=edZoom||autoZoom();
     [cv,on,gr].forEach(c=>{c.width=img.width;c.height=img.height});
-    setZoom(z);
-    // 왼쪽 위 귀퉁이는 대개 비어 있다 — 처음부터 그림 한가운데를 보여준다.
-    const sc0=cv.closest('.cw');
-    if(sc0){sc0.scrollLeft=(img.width*base.z-sc0.clientWidth)/2;sc0.scrollTop=(img.height*base.z-sc0.clientHeight)/2}
     // 같은 낱장을 다시 그리는 것뿐이면(전체화면 전환 등) 하던 붓질을 이어간다.
     // 여기서 무조건 저장본을 다시 읽으면 아직 '적용' 안 한 작업이 조용히 사라진다.
     // 칸에 제 손질이 없으면 재료 낱장 손질에서 «베껴» 시작한다 — 여기서부터 갈라진다.
@@ -3136,6 +3225,14 @@ function mount(cv,on,gr,pw){
     if(mountedKey!==k){ strokes=(edits[k]||edits[K(openEd.src,openEd.i)]||[]).slice(); mountedKey=k; sel=null; flt=null; fltBase=null; }
     redraw();drawOnion(on);buildPal(pw);
     bindCanvas(cv);
+    // 그려진 것에 맞춘다. 칸 전체에 맞추면 캐릭터가 점으로 보인다.
+    if(!edZoom)fitContent();
+    else if(edZoom<0)fitCanvas();
+    else{
+      setZoom(edZoom);
+      const sc0=cv.closest('.cw');
+      if(sc0){sc0.scrollLeft=(img.width*base.z-sc0.clientWidth)/2;sc0.scrollTop=(img.height*base.z-sc0.clientHeight)/2}
+    }
   };
   // 편집기는 **원본**에서 시작한다. 손질한 그림을 불러오면 같은 손질이 두 번 얹힌다.
   img.src=rawURL(openEd.src,openEd.i);

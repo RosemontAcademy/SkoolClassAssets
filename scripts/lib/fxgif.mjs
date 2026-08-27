@@ -478,6 +478,26 @@ export function fillRatio(px, w, h, alpha = 40) {
 }
 
 /**
+ * 그림이 실제로 있는 네모. 256칸 한가운데 점만 있는 이펙트를
+ * 칸 전체에 맞추면 캐릭터가 점으로 보이므로, 편집기·미리보기가 여기로 맞춘다.
+ */
+export function contentBox(px, w, h, alpha = 40) {
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (px[(y * w + x) * 4 + 3] > alpha) {
+        if (x < x0) x0 = x;
+        if (y < y0) y0 = y;
+        if (x > x1) x1 = x;
+        if (y > y1) y1 = y;
+      }
+    }
+  }
+  if (x1 < 0) return { x: 0, y: 0, w, h };
+  return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+/**
  * 한 종·한 종류의 **재료** 파일들.
  *
  * `-fx.gif` 는 게임이 읽는 **결과물**이라 저장할 때마다 덮어써진다. 그걸 재료로도 쓰면
@@ -587,7 +607,7 @@ export function listItems(fxRoot) {
   for (const dir of readdirSync(fxRoot)) {
     const p = join(fxRoot, dir);
     if (!statSync(p).isDirectory()) continue;
-    for (const kind of ['attack', 'attacked']) {
+    for (const kind of ['attack', 'attacked', 'hit']) {
       const srcs = sourcesFor(fxRoot, dir, kind);
       if (!srcs.length) continue;
       const head = probeGif(srcs[0].path);

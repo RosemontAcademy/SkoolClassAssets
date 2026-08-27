@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const { composeSeq } = await import(pathToFileURL(join(here, 'lib', 'fxgif.mjs')).href);
+const { composeSeq, contentBox, listItems } = await import(pathToFileURL(join(here, 'lib', 'fxgif.mjs')).href);
 
 const W = 16, H = 16;
 /** 온통 한 색인 낱장 하나. */
@@ -92,6 +92,25 @@ const paint = {
     seq: [{ src: 'live', i: 0, over: [{ src: 'wrongsize', i: 0 }] }],
   }, get));
   say(!!msg && /크기가 다릅니다/.test(msg), '크기가 다른 낱장은 여전히 막힌다', msg || '(안 막힘)');
+}
+
+// 6. 그림이 있는 칸만 잰다 — 편집기가 빈 칸에 맞추면 캐릭터가 점이 된다
+{
+  const px = new Uint8Array(W * H * 4);
+  for (let y = 4; y < 8; y++) for (let x = 4; x < 8; x++) {
+    const i = (y * W + x) * 4; px[i] = 1; px[i + 3] = 255;
+  }
+  const b = contentBox(px, W, H);
+  say(b.x === 4 && b.y === 4 && b.w === 4 && b.h === 4, '그림 있는 칸만 잰다', JSON.stringify(b));
+  const empty = contentBox(new Uint8Array(W * H * 4), W, H);
+  say(empty.w === W && empty.h === H, '빈 칸은 통째로 돌려준다');
+}
+
+// 7. hit 도 목록에 있다. attack·attacked 는 그대로다.
+{
+  const items = listItems(join(here, '..', 'skillFX'));
+  say(items.some(it => it.kind === 'hit'), 'hit 도 목록에 있다');
+  say(items.some(it => it.kind === 'attack') && items.some(it => it.kind === 'attacked'), 'attack·attacked 는 그대로다');
 }
 
 console.log(fail ? ('\n어긋남 ' + fail + '건') : '\n모두 통과');

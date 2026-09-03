@@ -1,0 +1,63 @@
+{
+  "species": "6-charizard",
+  "kind": "attack",
+  "canvas": "256x256",
+  "delay_ms": [
+    160,
+    470,
+    470,
+    470,
+    470,
+    470,
+    470
+  ],
+  "loop_ms": 2980,
+  "lead_short": true,
+  "fit_ms": 3000,
+  "frames": 7,
+  "steps": [
+    {
+      "src": "new",
+      "i": 4,
+      "erase": [],
+      "over": []
+    },
+    {
+      "src": "new",
+      "i": 3,
+      "erase": [],
+      "over": []
+    },
+    {
+      "src": "new",
+      "i": 0,
+      "erase": [],
+      "over": []
+    },
+    {
+      "src": "old",
+      "i": 0,
+      "erase": [],
+      "over": []
+    },
+    {
+      "src": "old",
+      "i": 1,
+      "erase": [],
+      "over": []
+    },
+    {
+      "src": "old",
+      "i": 2,
+      "erase": [],
+      "over": []
+    },
+    {
+      "src": "old",
+      "i": 3,
+      "erase": [],
+      "over": []
+    }
+  ],
+  "saved_at": "2026-08-24T23:27:00.878Z"
+}

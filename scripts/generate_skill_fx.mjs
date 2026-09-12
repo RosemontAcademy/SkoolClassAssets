@@ -433,6 +433,289 @@ const CHARACTERS = {
     hitDescription: 'low kick impact, a heavy white shock arc slams across the target low, dust puffs out sideways along the ground, pixel art',
     hitAction: 'the shock arc slams across low, dust puffs shoot sideways then settle',
   },
+  /* ── 2026-09-12부터 새로 채우는 종 ──────────────────────────────────────────
+     hit* 항목을 두지 않는다 — hit-fx는 2026-08-22부터 DotForge 담당이라 PixelLab으로
+     굽지 않는다. 그래서 이 종들에는 `--step attack` / `--step attacked` 만 쓴다
+     (인자 없이 돌리면 hit까지 구우려다 hitDescription이 없어 죽는다).
+
+     프롬프트는 2026-08-22 분석의 처방을 따른다:
+       · 자세 동사를 준다(stands/sits) — 후기 묶음엔 이게 없었고 퇴짜율이 높았다
+       · 위치를 'corner'로 못 박고, **몸이 코너를 벗어나지 않는다**고 덧붙인다
+         (2026-09-12 망키 앞모습에서 캐릭터가 가운데로 흘러내리는 걸 실제로 봤다)
+       · 이펙트가 **몸의 어디서** 나오는지 말한다
+       · 먼지/파편(dust·flecks·sparks·particles) 낱말은 쓰지 않는다 — 모델이 그대로 그린다 */
+  primeape: {
+    spriteId: 57, canvasSize: 128,
+    attackAction:  'primeape, tan pig monkey, planted in the bottom-left corner facing right, its body never drifts out of that corner, only its arms move: it slashes both fists apart and two white blades leave its fists and sweep across the canvas to the top-right corner, side view',
+    attackedAction:'primeape, furious tan pig monkey, planted in the top-right corner facing the viewer, its body never drifts out of that corner and stays fully visible in every frame, only its arms move: it crosses both forearms then slashes them apart and two white blades of force cross into an X toward the bottom-left corner, front view',
+  },
+  annihilape: {
+    spriteId: 979, canvasSize: 128,   // 256은 빈자리가 넓어 캐릭터가 통째로 다시 그려졌다(2026-09-12)
+    attackAction:  'annihilape, dark grey ape with white ribcage marks and orange horns, planted in the bottom-left corner facing right, never leaving it, only its arm moves: it drives a fist wrapped in purple ghost flame toward the top-right corner and a purple shockwave follows, side view',
+    attackedAction:'annihilape, dark grey ape with white ribcage marks and orange horns, planted in the top-right corner facing the viewer, never drifting out of it and fully visible in every frame, only its arm moves: it drives a fist wrapped in purple ghost flame toward the bottom-left corner and a purple shockwave ring follows, front view',
+  },
+
+  /* 니드런 두 줄 — 1~28번에서 통째로 건너뛰어져 있던 자리다. */
+  'nidoran-f': {
+    spriteId: 29, canvasSize: 128,
+    attackAction:  'nidoran, small pale blue rabbit with dark spots and long ears, planted in the bottom-left corner facing right, never leaving it, only its paw moves: it rakes a front paw and three thin white claw streaks fly from the paw to the top-right corner, side view',
+    attackedAction:'nidoran, small pale blue rabbit with dark spots and long ears, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its paw moves: it rakes a front paw and three thin white claw streaks fly from the paw to the bottom-left corner, front view',
+  },
+  nidorina: {
+    spriteId: 30, canvasSize: 128,
+    attackAction:  'nidorina, pale blue rabbit with small back spines, planted in the bottom-left corner facing right, never leaving it, only its head moves: it lunges its jaws and a violet crescent fang slash flies from its mouth to the top-right corner, side view',
+    attackedAction:'nidorina, pale blue rabbit with small back spines, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its head moves: it lunges its jaws and a violet crescent fang slash flies from its mouth to the bottom-left corner, front view',
+  },
+  nidoqueen: {
+    spriteId: 31, canvasSize: 128,
+    attackAction:  'nidoqueen, large blue armoured dinosaur with a cream belly, planted in the bottom-left corner facing right, never leaving it, only its arm moves: it slams a fist down and a jagged orange ground fissure with rising rock shards runs to the top-right corner, side view',
+    attackedAction:'nidoqueen, large blue armoured dinosaur with a cream belly, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arm moves: it slams a fist down and a jagged orange ground fissure with rising rock shards runs to the bottom-left corner, front view',
+  },
+  'nidoran-m': {
+    spriteId: 32, canvasSize: 128,
+    attackAction:  'nidoran, small purple rabbit with huge ears and a forehead horn, planted in the bottom-left corner facing right, never leaving it, only its head moves: it jabs its horn and a sharp white thrust streak flies from the horn to the top-right corner, side view',
+    attackedAction:'nidoran, small purple rabbit with huge ears and a forehead horn, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its head moves: it jabs its horn and a sharp white thrust streak flies from the horn to the bottom-left corner, front view',
+  },
+  nidorino: {
+    spriteId: 33, canvasSize: 128,
+    attackAction:  'nidorino, purple spiky rhino with a long horn, planted in the bottom-left corner facing right, never leaving it, only its head moves: it drives its horn forward and a violet spear of poison flies from the horn to the top-right corner, side view',
+    attackedAction:'nidorino, purple spiky rhino with a long horn, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its head moves: it drives its horn forward and a violet spear of poison flies from the horn to the bottom-left corner, front view',
+  },
+  nidoking: {
+    spriteId: 34, canvasSize: 128,
+    attackAction:  'nidoking, large purple armoured dinosaur with a big horn, planted in the bottom-left corner facing right, never leaving it, only its head moves: it charges its horn and a wide green glowing horn beam flies from the horn to the top-right corner, side view',
+    attackedAction:'nidoking, large purple armoured dinosaur with a big horn, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its head moves: it charges its horn and a wide green glowing horn beam flies from the horn to the bottom-left corner, front view',
+  },
+
+  growlithe: {
+    spriteId: 58, canvasSize: 128,
+    attackAction:  'growlithe, orange puppy with black stripes and a cream mane, planted in the bottom-left corner facing right, never leaving it, only its head moves: it opens its mouth and small orange flames fly from its mouth to the top-right corner, side view',
+    attackedAction:'growlithe, orange puppy with black stripes and a cream mane, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its head moves: it opens its mouth and small orange flames fly from its mouth to the bottom-left corner, front view',
+  },
+  arcanine: {
+    spriteId: 59, canvasSize: 128,
+    attackAction:  'arcanine, big orange tiger dog with black stripes and a cream mane, planted in the bottom-left corner facing right, never leaving it: its whole body is wrapped in orange fire and a blazing fire trail surges from its body to the top-right corner, side view',
+    attackedAction:'arcanine, big orange tiger dog with black stripes and a cream mane, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame: its whole body is wrapped in orange fire and a blazing fire trail surges from its body to the bottom-left corner, front view',
+  },
+
+  poliwag: {
+    spriteId: 60, canvasSize: 128,
+    attackAction:  'poliwag, round blue tadpole with a black and white spiral belly, planted in the bottom-left corner facing right and never leaving it, blowing a stream of round blue bubbles that drift up to the top-right corner, side view',
+    attackedAction:'poliwag, round blue tadpole with a black and white spiral belly, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its mouth moves: a stream of round blue bubbles floats from its mouth to the bottom-left corner, front view',
+  },
+  poliwhirl: {
+    spriteId: 61, canvasSize: 128,
+    attackAction:  'poliwhirl, blue frog with a white spiral belly and white gloves, planted in the bottom-left corner facing right, never leaving it, only its hands move: it pushes both palms out and a ring of blue water pulses from its palms to the top-right corner, side view',
+    attackedAction:'poliwhirl, blue frog with a white spiral belly and white gloves, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its hands move: it pushes both palms out and a ring of blue water pulses from its palms to the bottom-left corner, front view',
+  },
+  poliwrath: {
+    spriteId: 62, canvasSize: 128,
+    attackAction:  'poliwrath, muscular blue frog with a white spiral belly, planted in the bottom-left corner facing right, never leaving it, only its arms move: it drives both fists forward and a heavy white shock arc bursts from its fists to the top-right corner, side view',
+    attackedAction:'poliwrath, muscular blue frog with a white spiral belly, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arms move: it drives both fists forward and a heavy white shock arc bursts from its fists to the bottom-left corner, front view',
+  },
+
+  abra: {
+    spriteId: 63, canvasSize: 128,
+    attackAction:  'abra, yellow fox psychic with brown armour plates, sits in the bottom-left corner facing right, never leaving it: it glows and a trail of pale violet after-images streaks from its body to the top-right corner, side view',
+    attackedAction:'abra, yellow fox psychic with brown armour plates, sits in the top-right corner facing the viewer, never leaving it and fully visible in every frame: it glows and a trail of pale violet after-images streaks from its body to the bottom-left corner, front view',
+  },
+  kadabra: {
+    spriteId: 64, canvasSize: 128,
+    attackAction:  'kadabra, yellow fox psychic with a moustache holding a silver spoon, planted in the bottom-left corner facing right, never leaving it, only its arm moves: a rainbow psychic beam shoots from its spoon to the top-right corner, side view',
+    attackedAction:'kadabra, yellow fox psychic with a moustache holding a silver spoon, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arm moves: a rainbow psychic beam shoots from its spoon to the bottom-left corner, front view',
+  },
+  alakazam: {
+    spriteId: 65, canvasSize: 128,
+    attackAction:  'alakazam, yellow psychic with a long moustache holding two silver spoons, planted in the bottom-left corner facing right, never leaving it, only its arms move: a swirling violet psychic wave spreads from its spoons to the top-right corner, side view',
+    attackedAction:'alakazam, yellow psychic with a long moustache holding two silver spoons, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arms move: a swirling violet psychic wave spreads from its spoons to the bottom-left corner, front view',
+  },
+
+  machop: {
+    spriteId: 66, canvasSize: 128,
+    attackAction:  'machop, small grey-blue muscular humanoid with head ridges, planted in the bottom-left corner facing right, never leaving it, only its leg moves: it snaps a low kick and a white impact arc sweeps from its foot to the top-right corner, side view',
+    attackedAction:'machop, small grey-blue muscular humanoid with head ridges, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its leg moves: it snaps a low kick and a white impact arc sweeps from its foot to the bottom-left corner, front view',
+  },
+  machoke: {
+    spriteId: 67, canvasSize: 128,
+    attackAction:  'machoke, grey-blue muscular humanoid with a red belt, planted in the bottom-left corner facing right, never leaving it, only its arms move: it hurls both arms over and a white spiral throw streak whips from its hands to the top-right corner, side view',
+    attackedAction:'machoke, grey-blue muscular humanoid with a red belt, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arms move: it hurls both arms over and a white spiral throw streak whips from its hands to the bottom-left corner, front view',
+  },
+  machamp: {
+    spriteId: 68, canvasSize: 128,
+    attackAction:  'machamp, grey-blue four-armed muscular humanoid with a gold belt, planted in the bottom-left corner facing right, never leaving it, only its arms move: it drives a glowing fist out and a bright orange shock ring bursts from the fist to the top-right corner, side view',
+    attackedAction:'machamp, grey-blue four-armed muscular humanoid with a gold belt, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arms move: it drives a glowing fist out and an orange shock ring bursts from the fist to the bottom-left corner, front view',
+  },
+
+  bellsprout: {
+    spriteId: 69, canvasSize: 128,
+    attackAction:  'bellsprout, yellow bell-headed plant on thin stem legs, planted in the bottom-left corner facing right, never leaving it, only its vine moves: a green vine whips out from its stem to the top-right corner, side view',
+    attackedAction:'bellsprout, yellow bell-headed plant on thin stem legs, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its vine moves: a green vine whips out from its stem to the bottom-left corner, front view',
+  },
+  weepinbell: {
+    spriteId: 70, canvasSize: 128,
+    attackAction:  'weepinbell, yellow pitcher plant with a leaf on each side, planted in the bottom-left corner facing right, never leaving it, only its leaves move: it flicks its leaves and sharp green leaf blades spin from the leaves to the top-right corner, side view',
+    attackedAction:'weepinbell, yellow pitcher plant with a leaf on each side, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its leaves move: it flicks its leaves and sharp green leaf blades spin from the leaves to the bottom-left corner, front view',
+  },
+  victreebel: {
+    spriteId: 71, canvasSize: 128,
+    attackAction:  'victreebel, tall yellow pitcher plant with a long curled vine, planted in the bottom-left corner facing right, never leaving it, only its leaf moves: it swings a leaf and a long glowing green blade sweeps from the leaf to the top-right corner, side view',
+    attackedAction:'victreebel, tall yellow pitcher plant with a long curled vine, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its leaf moves: it swings a leaf and a long glowing green blade sweeps from the leaf to the bottom-left corner, front view',
+  },
+
+  tentacool: {
+    spriteId: 72, canvasSize: 128,
+    attackAction:  'tentacool, small blue jellyfish with two red gems, hovering in the bottom-left corner facing right, never leaving it: it spits a splash of glowing violet acid that arcs to the top-right corner, side view',
+    attackedAction:'tentacool, small blue jellyfish with two red gems, hovering in the top-right corner facing the viewer, never leaving it and fully visible in every frame: it spits a splash of glowing violet acid that arcs to the bottom-left corner, front view',
+  },
+  tentacruel: {
+    spriteId: 73, canvasSize: 128,
+    attackAction:  'tentacruel, large blue jellyfish with red gems and many tentacles, hovering in the bottom-left corner facing right, never leaving it: a thick torrent of blue water blasts from below its head to the top-right corner, side view',
+    attackedAction:'tentacruel, large blue jellyfish with red gems and many tentacles, hovering in the top-right corner facing the viewer, never leaving it and fully visible in every frame: a thick torrent of blue water blasts from below its head to the bottom-left corner, front view',
+  },
+
+  geodude: {
+    spriteId: 74, canvasSize: 128,
+    attackAction:  'geodude, grey boulder with two muscular arms, planted in the bottom-left corner facing right, never leaving it, only its arm moves: it hurls a brown rock that flies from its hand to the top-right corner, side view',
+    attackedAction:'geodude, grey boulder with two muscular arms, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arm moves: it hurls a brown rock that flies from its hand to the bottom-left corner, front view',
+  },
+  graveler: {
+    spriteId: 75, canvasSize: 128,
+    attackAction:  'graveler, grey four-armed boulder creature, planted in the bottom-left corner facing right, never leaving it: it tucks into a ball and a white spinning motion trail streaks from its body to the top-right corner, side view',
+    attackedAction:'graveler, grey four-armed boulder creature, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame: it tucks into a ball and a white spinning motion trail streaks from its body to the bottom-left corner, front view',
+  },
+  golem: {
+    spriteId: 76, canvasSize: 128,
+    attackAction:  'golem, round boulder creature with a green rock shell, planted in the bottom-left corner facing right, never leaving it, only its arm moves: it slams the ground and a row of jagged brown stone spikes erupts toward the top-right corner, side view',
+    attackedAction:'golem, round boulder creature with a green rock shell, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arm moves: it slams the ground and a row of jagged brown stone spikes erupts toward the bottom-left corner, front view',
+  },
+
+  ponyta: {
+    spriteId: 77, canvasSize: 128,
+    attackAction:  'ponyta, cream pony with an orange fire mane and tail, planted in the bottom-left corner facing right, never leaving it, only its head moves: small orange flames fly from its mane to the top-right corner, side view',
+    attackedAction:'ponyta, cream pony with an orange fire mane and tail, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its head moves: small orange flames fly from its mane to the bottom-left corner, front view',
+  },
+  rapidash: {
+    spriteId: 78, canvasSize: 128,
+    attackAction:  'rapidash, white horse with a long orange fire mane and a horn, planted in the bottom-left corner facing right, never leaving it: its body is wrapped in orange fire and a blazing fire trail surges from its body to the top-right corner, side view',
+    attackedAction:'rapidash, white horse with a long orange fire mane and a horn, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame: its body is wrapped in orange fire and a blazing fire trail surges from its body to the bottom-left corner, front view',
+  },
+
+  slowpoke: {
+    spriteId: 79, canvasSize: 128,
+    attackAction:  'slowpoke, sleepy pink hippo with a long tail, planted in the bottom-left corner facing right, never leaving it: a thin jet of blue water sprays from its mouth to the top-right corner, side view',
+    attackedAction:'slowpoke, sleepy pink hippo with a long tail, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame: a thin jet of blue water sprays from its mouth to the bottom-left corner, front view',
+  },
+  slowbro: {
+    spriteId: 80, canvasSize: 128,
+    attackAction:  'slowbro, pink hippo with a spiral shell on its tail, planted in the bottom-left corner facing right, never leaving it: its eyes glow and a swirling violet psychic wave spreads from its head to the top-right corner, side view',
+    attackedAction:'slowbro, pink hippo with a spiral shell on its tail, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame: its eyes glow and a swirling violet psychic wave spreads from its head to the bottom-left corner, front view',
+  },
+
+  magnemite: {
+    spriteId: 81, canvasSize: 128,
+    attackAction:  'magnemite, grey metal sphere with one eye, two magnets and screws, hovering in the bottom-left corner facing right, never leaving it: a yellow lightning bolt cracks from its magnets to the top-right corner, side view',
+    attackedAction:'magnemite, grey metal sphere with one eye, two magnets and screws, hovering in the top-right corner facing the viewer, never leaving it and fully visible in every frame: a yellow lightning bolt cracks from its magnets to the bottom-left corner, front view',
+  },
+  magneton: {
+    spriteId: 82, canvasSize: 128,
+    attackAction:  'magneton, three grey magnet spheres joined together, hovering in the bottom-left corner facing right, never leaving it: yellow electric arcs crackle between the spheres and a wide bolt fans out to the top-right corner, side view',
+    attackedAction:'magneton, three grey magnet spheres joined together, hovering in the top-right corner facing the viewer, never leaving it and fully visible in every frame: yellow electric arcs crackle between the spheres and a wide bolt fans out to the bottom-left corner, front view',
+  },
+
+  farfetchd: {
+    spriteId: 83, canvasSize: 128,
+    attackAction:  'farfetchd, brown duck holding a green leek stalk, planted in the bottom-left corner facing right, never leaving it, only its wing moves: it swings the leek and a white crescent slash sweeps from the leek to the top-right corner, side view',
+    attackedAction:'farfetchd, brown duck holding a green leek stalk, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its wing moves: it swings the leek and a white crescent slash sweeps from the leek to the bottom-left corner, front view',
+  },
+
+  doduo: {
+    spriteId: 84, canvasSize: 128,
+    attackAction:  'doduo, brown two-headed flightless bird, planted in the bottom-left corner facing right, never leaving it, only its heads move: both beaks stab forward and two sharp white thrust streaks fly from the beaks to the top-right corner, side view',
+    attackedAction:'doduo, brown two-headed flightless bird, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its heads move: both beaks stab forward and two sharp white thrust streaks fly from the beaks to the bottom-left corner, front view',
+  },
+  dodrio: {
+    spriteId: 85, canvasSize: 128,
+    attackAction:  'dodrio, black three-headed flightless bird, planted in the bottom-left corner facing right, never leaving it, only its heads move: three glowing orbs, one red one yellow one blue, fly from the three beaks to the top-right corner, side view',
+    attackedAction:'dodrio, black three-headed flightless bird, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its heads move: three glowing orbs, one red one yellow one blue, fly from the three beaks to the bottom-left corner, front view',
+  },
+
+  seel: {
+    spriteId: 86, canvasSize: 128,
+    attackAction:  'seel, white sea lion with a horn on its head, planted in the bottom-left corner facing right, never leaving it: a thin jet of blue water sprays from its mouth to the top-right corner, side view',
+    attackedAction:'seel, white sea lion with a horn on its head, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame: a thin jet of blue water sprays from its mouth to the bottom-left corner, front view',
+  },
+  dewgong: {
+    spriteId: 87, canvasSize: 128,
+    attackAction:  'dewgong, white sea lion with a long body and a horn, planted in the bottom-left corner facing right, never leaving it: a pale blue ice beam shoots from its mouth to the top-right corner, side view',
+    attackedAction:'dewgong, white sea lion with a long body and a horn, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame: a pale blue ice beam shoots from its mouth to the bottom-left corner, front view',
+  },
+
+  grimer: {
+    spriteId: 88, canvasSize: 128,
+    attackAction:  'grimer, purple sludge blob with a wide grin, planted in the bottom-left corner facing right, never leaving it, only its arm moves: it swings a sludge arm and a white impact arc sweeps from the arm to the top-right corner, side view',
+    attackedAction:'grimer, purple sludge blob with a wide grin, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arm moves: it swings a sludge arm and a white impact arc sweeps from the arm to the bottom-left corner, front view',
+  },
+  muk: {
+    spriteId: 89, canvasSize: 128,
+    attackAction:  'muk, large purple sludge creature, planted in the bottom-left corner facing right, never leaving it, only its arm moves: it lobs a blob of violet sludge that arcs from its arm to the top-right corner, side view',
+    attackedAction:'muk, large purple sludge creature, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arm moves: it lobs a blob of violet sludge that arcs from its arm to the bottom-left corner, front view',
+  },
+
+  shellder: {
+    spriteId: 90, canvasSize: 128,
+    attackAction:  'shellder, purple clam with a long tongue, planted in the bottom-left corner facing right, never leaving it: a thin jet of blue water sprays from its open shell to the top-right corner, side view',
+    attackedAction:'shellder, purple clam with a long tongue, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame: a thin jet of blue water sprays from its open shell to the bottom-left corner, front view',
+  },
+  cloyster: {
+    spriteId: 91, canvasSize: 128,
+    attackAction:  'cloyster, dark spiked clam with a pearl face, planted in the bottom-left corner facing right, never leaving it: a volley of pale blue ice spikes shoots from its shell to the top-right corner, side view',
+    attackedAction:'cloyster, dark spiked clam with a pearl face, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame: a volley of pale blue ice spikes shoots from its shell to the bottom-left corner, front view',
+  },
+
+  gastly: {
+    spriteId: 92, canvasSize: 128,
+    attackAction:  'gastly, round purple ghost head inside a dark gas cloud, hovering in the bottom-left corner facing right, never leaving it: a long violet tongue stretches from its mouth to the top-right corner, side view',
+    attackedAction:'gastly, round purple ghost head inside a dark gas cloud, hovering in the top-right corner facing the viewer, never leaving it and fully visible in every frame: a long violet tongue stretches from its mouth to the bottom-left corner, front view',
+  },
+  haunter: {
+    spriteId: 93, canvasSize: 128,
+    attackAction:  'haunter, purple ghost with floating detached hands, hovering in the bottom-left corner facing right, never leaving it, only its hands move: a dark violet sphere forms between its hands and flies to the top-right corner, side view',
+    attackedAction:'haunter, purple ghost with floating detached hands, hovering in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its hands move: a dark violet sphere forms between its hands and flies to the bottom-left corner, front view',
+  },
+  gengar: {
+    spriteId: 94, canvasSize: 128,
+    attackAction:  'gengar, round purple ghost with a wide grin and spikes, planted in the bottom-left corner facing right, never leaving it, only its hands move: a dark violet beam ringed with black rushes from its hands to the top-right corner, side view',
+    attackedAction:'gengar, round purple ghost with a wide grin and spikes, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its hands move: a dark violet beam ringed with black rushes from its hands to the bottom-left corner, front view',
+  },
+
+  onix: {
+    spriteId: 95, canvasSize: 128,
+    attackAction:  'onix, huge grey rock snake made of boulders, planted in the bottom-left corner facing right, never leaving it, only its head moves: it hurls a brown boulder that flies from its head to the top-right corner, side view',
+    attackedAction:'onix, huge grey rock snake made of boulders, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its head moves: it hurls a brown boulder that flies from its head to the bottom-left corner, front view',
+  },
+
+  drowzee: {
+    spriteId: 96, canvasSize: 128,
+    attackAction:  'drowzee, yellow and brown tapir creature, planted in the bottom-left corner facing right, never leaving it, only its arm moves: it swings a flat hand and a white impact arc sweeps from the hand to the top-right corner, side view',
+    attackedAction:'drowzee, yellow and brown tapir creature, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arm moves: it swings a flat hand and a white impact arc sweeps from the hand to the bottom-left corner, front view',
+  },
+  hypno: {
+    spriteId: 97, canvasSize: 128,
+    attackAction:  'hypno, yellow creature with a white collar holding a pendulum, planted in the bottom-left corner facing right, never leaving it, only its arm moves: it swings the pendulum and a swirling violet psychic wave spreads to the top-right corner, side view',
+    attackedAction:'hypno, yellow creature with a white collar holding a pendulum, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its arm moves: it swings the pendulum and a swirling violet psychic wave spreads to the bottom-left corner, front view',
+  },
+
+  krabby: {
+    spriteId: 98, canvasSize: 128,
+    attackAction:  'krabby, small red crab with big pincers, planted in the bottom-left corner facing right, never leaving it, only its pincer moves: a stream of round blue bubbles drifts from its pincer to the top-right corner, side view',
+    attackedAction:'krabby, small red crab with big pincers, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its pincer moves: a stream of round blue bubbles drifts from its pincer to the bottom-left corner, front view',
+  },
+  kingler: {
+    spriteId: 99, canvasSize: 128,
+    attackAction:  'kingler, orange crab with one huge pincer, planted in the bottom-left corner facing right, never leaving it, only its big pincer moves: it hammers the pincer down and a white shock arc bursts from the pincer to the top-right corner, side view',
+    attackedAction:'kingler, orange crab with one huge pincer, planted in the top-right corner facing the viewer, never leaving it and fully visible in every frame, only its big pincer moves: it hammers the pincer down and a white shock arc bursts from the pincer to the bottom-left corner, front view',
+  },
+
   paras: {
     spriteId: 46, canvasSize: 128,
     attackAction:  'paras, small orange mushroom crab, sits at the bottom-left corner and stays fully visible in every frame, it swipes both front claws upward-right, leaving three bright white glowing claw streaks that fly toward the top-right corner, side view',
@@ -774,11 +1057,30 @@ async function framesToGif(framesB64, outPath, fps = 4, removeBackground = false
   console.log(`  ✓ ${savePath.replace(ASSETS_ROOT, '').replace(/\\/g, '/')}`);
 }
 
+/**
+ * 자산의 진짜 이름표 — **도감번호가 앞에 붙는다.**
+ *
+ *   skillFX/56-mankey/56-mankey-attack-fx.gif
+ *
+ * 예전엔 생성기가 `skillFX/mankey/attack-fx.gif` 로 써 놓아서, 구울 때마다 사람이 손으로
+ * 폴더와 파일 이름을 고쳐 옮겼다. 종이 100개가 넘게 남았는데 그걸 매번 손으로 하면
+ * 언젠가 한 종이 조용히 빠진다 — 게임 쪽 주소는 도감번호가 붙은 이름만 부른다.
+ * (2026-09-12 원장님 지시: "도감 번호 앞에다가 박아줘야지")
+ */
+function fxDir(name) {
+  const id = CHARACTERS[name]?.spriteId;
+  return join(OUTPUT_DIR, id ? `${id}-${name}` : name);
+}
+function fxFile(name, file) {
+  const id = CHARACTERS[name]?.spriteId;
+  return join(fxDir(name), id ? `${id}-${name}-${file}` : file);
+}
+
 // Sample the dominant elemental color from an existing attack-fx GIF.
 // Reads the first frame, discards transparent + near-black pixels, then returns
 // the most frequent (r,g,b) rounded to nearest 16 — packed as 0xRRGGBBFF.
 async function sampleAttackFxColor(name, fallback) {
-  const gifPath = join(OUTPUT_DIR, name, 'attack-fx.gif');
+  const gifPath = fxFile(name, 'attack-fx.gif');
   if (!existsSync(gifPath)) return fallback;
   try {
     const img = await Jimp.read(gifPath);
@@ -859,12 +1161,20 @@ async function pollJob(jobId, timeout = 360_000) {
 // held back and re-attached AFTER trimming, so it can never be the part that is lost.
 const STYLE_TAIL = ' pixel art, transparent background.';
 
-/** Trims from the middle, never the end, and says so out loud. */
+/**
+ * Trims from the middle, never the end, and says so out loud.
+ *
+ * ⚠️ 2026-09-12: 이 자름은 **예산을 한 글자 넘겼다.** 이음말 ' … ' 는 세 글자인데 2를 뺐다.
+ *    그래서 자르고도 최종 길이가 늘 501 이 되어 API 가 422(String should have at most 500)로
+ *    되던졌다 — «줄였습니다» 하고 실패하니, 로그만 보면 길이 탓인 줄 모른다.
+ *    끝에 한 번 더 잘라 예산을 절대 못 넘게 못 박는다(계산이 또 틀려도 요청은 산다).
+ */
 function fitAction(action, budget) {
   if (action.length <= budget) return action;
   const keepTail = 90;                       // the move description usually lands here
-  const head = budget - keepTail - 2;
-  const out = action.slice(0, head).trimEnd() + ' … ' + action.slice(-keepTail).trimStart();
+  const head = budget - keepTail - 3;        // ' … ' = 3자
+  const out = (action.slice(0, head).trimEnd() + ' … ' + action.slice(-keepTail).trimStart())
+    .slice(0, budget);
   console.log(`  ⚠ 프롬프트가 길어 가운데를 ${action.length - out.length}자 줄였습니다 (${action.length}→${out.length})`);
   return out;
 }
@@ -931,14 +1241,14 @@ const BEHIND = ' seen strictly from behind, its face never visible, it never tur
  */
 function saveRaw(name, kind, base64, results) {
   try {
-    const dir = join(OUTPUT_DIR, name, '_raw');
+    const dir = join(fxDir(name), '_raw');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, kind + '.json'), JSON.stringify({ base64, results }));
     console.log('  원본 낱장을 _raw/' + kind + '.json 에 남겼습니다');
   } catch (e) { console.log('  ⚠ 원본 낱장 저장 실패: ' + e.message); }
 }
 function loadRaw(name, kind) {
-  const p = join(OUTPUT_DIR, name, '_raw', kind + '.json');
+  const p = join(fxDir(name), '_raw', kind + '.json');
   if (!existsSync(p)) return null;
   return JSON.parse(readFileSync(p, 'utf8'));
 }
@@ -959,7 +1269,7 @@ async function stepAttack(name, cfg, count = 1) {
   for (const frames of results) {
     // Force the animation to START from the exact reference sprite (never a redrawn character):
     // prepend the padded reference as frame 0.
-    await framesToGif([base64, ...frames], join(OUTPUT_DIR, name, 'attack-fx.gif'), 4, false, true);
+    await framesToGif([base64, ...frames], fxFile(name, 'attack-fx.gif'), 4, false, true);
   }
 }
 
@@ -974,7 +1284,7 @@ async function stepAttacked(name, cfg, count = 1) {
   if (!cached) saveRaw(name, 'attacked', base64, results);
   for (const frames of results) {
     // Start from the exact reference sprite: prepend the padded reference as frame 0.
-    await framesToGif([base64, ...frames], join(OUTPUT_DIR, name, 'attacked-fx.gif'), 4, false, true);
+    await framesToGif([base64, ...frames], fxFile(name, 'attacked-fx.gif'), 4, false, true);
   }
 }
 
@@ -987,7 +1297,7 @@ async function stepHit(name, cfg, count = 1) {
     Array.from({ length: count }, () => animateFree(cfg.hitDescription, cfg.hitAction, hitColor, cfg.hitShape ?? 'circle'))
   );
   for (const frames of results) {
-    await framesToGif(frames, join(OUTPUT_DIR, name, 'hit-fx.gif'), 4, true);
+    await framesToGif(frames, fxFile(name, 'hit-fx.gif'), 4, true);
   }
 }
 

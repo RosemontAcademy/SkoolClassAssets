@@ -20,3 +20,9 @@ scripts/.pixellab.key
 
 # 크레딧 복구용 원본 낱장 — 무겁고 저장소에 올릴 값이 아니다
 skillFX/*/_raw/
+
+# API 가 준 낱장 원본 — 크레딧을 다시 쓰지 않고 gif 만 다시 굽기 위한 것(--from-raw).
+# 종마다 수백 KB 라 저장소에 들이면 금세 수십 MB 가 되고, gif 만 있으면 게임은 돈다.
+skillFX/*/_raw/
+# 묶음 생성 로그
+_fxbatch-logs/
